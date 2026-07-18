@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -83,7 +84,24 @@ export class GoogleCalendarService {
     const account = await this.prisma.googleCalendarAccount.findUnique({
       where: { userId },
     });
-    return account ? this.toStatus(account) : { connected: false as const };
+
+    if (!account) {
+      return { connected: false as const };
+    }
+
+    return { ...this.toStatus(account), email: await this.getPrimaryEmail(userId) };
+  }
+
+  // id primary calendar = alamat email akunnya, dipake buat mastiin akun mana yg ke-connect
+  private async getPrimaryEmail(userId: string): Promise<string | null> {
+    try {
+      const calendar = await this.getCalendarClient(userId);
+      const { data } = await calendar.calendars.get({ calendarId: 'primary' });
+      return data.id ?? null;
+    } catch (error) {
+      console.error('[GoogleCalendar] could not resolve primary email:', this.describeGoogleError(error));
+      return null;
+    }
   }
 
   async disconnect(userId: string) {
@@ -145,14 +163,19 @@ export class GoogleCalendarService {
 
   async listEvents(userId: string, timeMin?: string, timeMax?: string) {
     const calendar = await this.getCalendarClient(userId);
-    const { data } = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: timeMin ?? new Date().toISOString(),
-      timeMax,
-      singleEvents: true,
-      orderBy: 'startTime',
-    });
-    return data.items ?? [];
+
+    try {
+      const { data } = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin: timeMin ?? new Date().toISOString(),
+        timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+      return data.items ?? [];
+    } catch (error) {
+      throw this.toGoogleApiException(error, 'list calendar events');
+    }
   }
 
   async createEvent(userId: string, event: calendar_v3.Schema$Event) {
@@ -191,13 +214,39 @@ export class GoogleCalendarService {
     };
   }
 
+  private toGoogleApiException(error: unknown, action: string) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    const detail = this.describeGoogleError(error);
+
+    // 401 = token mati, reconnect bakal nolong
+    if (status === 401) {
+      return new UnauthorizedException(
+        `Google Calendar access expired, reconnect required: ${detail}`,
+      );
+    }
+
+    // 403 bisa scope kurang, api belum di-enable, ato kena quota. reconnect belum tentu nolong
+    if (status === 403) {
+      return new ForbiddenException(`Google denied the request: ${detail}`);
+    }
+
+    return new BadGatewayException(`Google failed to ${action}: ${detail}`);
+  }
+
   // googleapis error
   private describeGoogleError(error: unknown): string {
     const data = (error as { response?: { data?: unknown } })?.response?.data;
-    const reason = (data as { error?: string })?.error;
-    if (reason) {
+    const reason = (data as { error?: unknown })?.error;
+
+    // oauth endpoint balikin string, calendar api balikin { code, message }
+    if (typeof reason === 'string') {
       return reason;
     }
+    const message = (reason as { message?: string })?.message;
+    if (message) {
+      return message;
+    }
+
     return error instanceof Error ? error.message : 'unknown error';
   }
 }

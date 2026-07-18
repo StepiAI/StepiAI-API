@@ -7,7 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './common/auth.module';
 import { ExampleModule } from './modules/example/example.module';
-import { OpenAiModule } from './openai/openai.module';
+import { OpenAiModule } from './modules/openai/openai.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 
 @Module({

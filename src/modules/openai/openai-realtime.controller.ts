@@ -1,8 +1,8 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard';
-import type { AuthenticatedUser } from '../common/interfaces/request-with-user.interface';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
+import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
 import { CreateRealtimeSessionDto } from './dto/create-realtime-session.dto';
 import { OpenAiService } from './openai.service';
 

@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { AuthModule } from '../common/auth.module';
+import { AuthModule } from '../../common/auth.module';
 import { OpenAiRealtimeController } from './openai-realtime.controller';
 import { OpenAiService } from './openai.service';
 

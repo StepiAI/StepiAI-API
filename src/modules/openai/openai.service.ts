@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI, { toFile, type Uploadable } from 'openai';
-import { AppConfig } from '../config/configuration';
+import { AppConfig } from '../../config/configuration';
 
 const DEFAULT_TEXT_MODEL = 'gpt-4.1-mini';
 const DEFAULT_SPEECH_MODEL = 'gpt-4o-mini-tts';

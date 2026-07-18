@@ -4,7 +4,6 @@ export interface AppConfig {
   supabase: {
     url: string;
     serviceRoleKey: string;
-    jwtSecret: string;
   };
   ai: {
     openAiApiKey: string;
@@ -15,6 +14,10 @@ export interface AppConfig {
   weather: {
     apiKey: string;
   };
+  google: {
+    clientId: string;
+    clientSecret: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -23,7 +26,6 @@ export default (): AppConfig => ({
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? '',
   },
   ai: {
     openAiApiKey: process.env.OPENAI_API_KEY ?? '',
@@ -33,5 +35,9 @@ export default (): AppConfig => ({
   },
   weather: {
     apiKey: process.env.WEATHER_API_KEY ?? '',
+  },
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   },
 });

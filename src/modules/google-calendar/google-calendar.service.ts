@@ -19,8 +19,13 @@ export class GoogleCalendarService {
   private readonly oauthClientId: string;
   private readonly oauthClientSecret: string;
 
-  constructor(private readonly prisma: PrismaService, configService: ConfigService<AppConfig, true>, ) {
-    const { clientId, clientSecret } = configService.get('google', {infer: true,});
+  constructor(
+    private readonly prisma: PrismaService,
+    configService: ConfigService<AppConfig, true>,
+  ) {
+    const { clientId, clientSecret } = configService.get('google', {
+      infer: true,
+    });
 
     this.oauthClientId = clientId;
     this.oauthClientSecret = clientSecret;
@@ -58,7 +63,7 @@ export class GoogleCalendarService {
 
     const refreshToken = tokens.refresh_token ?? existing?.refreshToken;
     if (!refreshToken) {
-      throw new BadRequestException('Google did not return a refresh token.',);
+      throw new BadRequestException('Google did not return a refresh token.');
     }
 
     const account = await this.prisma.googleCalendarAccount.upsert({
@@ -90,7 +95,10 @@ export class GoogleCalendarService {
       return { connected: false as const };
     }
 
-    return { ...this.toStatus(account), email: await this.getPrimaryEmail(userId) };
+    return {
+      ...this.toStatus(account),
+      email: await this.getPrimaryEmail(userId),
+    };
   }
 
   // id primary calendar = alamat email akunnya, dipake buat mastiin akun mana yg ke-connect
@@ -100,14 +108,19 @@ export class GoogleCalendarService {
       const { data } = await calendar.calendars.get({ calendarId: 'primary' });
       return data.id ?? null;
     } catch (error) {
-      console.error('[GoogleCalendar] could not resolve primary email:', this.describeGoogleError(error));
+      console.error(
+        '[GoogleCalendar] could not resolve primary email:',
+        this.describeGoogleError(error),
+      );
       return null;
     }
   }
 
   async disconnect(userId: string) {
-    await this.prisma.googleCalendarAccount.delete({ where: { userId } }).catch(() => undefined);
-    
+    await this.prisma.googleCalendarAccount
+      .delete({ where: { userId } })
+      .catch(() => undefined);
+
     return { connected: false as const };
   }
 
@@ -235,7 +248,8 @@ export class GoogleCalendarService {
   }
 
   private toGoogleApiException(error: unknown, action: string) {
-    const status = (error as { response?: { status?: number } })?.response?.status;
+    const status = (error as { response?: { status?: number } })?.response
+      ?.status;
     const detail = this.describeGoogleError(error);
 
     // 401 = token mati, reconnect bakal nolong

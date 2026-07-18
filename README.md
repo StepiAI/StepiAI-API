@@ -97,3 +97,107 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
 "# StepiAI-API" 
+
+## OpenAI integration
+
+#### taruh OPENAI_API_KEY di local env.
+Contoh Implementasi:
+
+```ts
+import { Body, Controller, Post } from '@nestjs/common';
+import { OpenAiService } from '../../openai/openai.service';
+
+@Controller('assistant')
+export class AssistantController {
+  constructor(private readonly openAi: OpenAiService) {}
+
+  @Post('reply')
+  async reply(@Body('prompt') prompt: string) {
+    return {
+      text: await this.openAi.generateText(prompt, {
+        instructions: 'Reply with concise, actionable guidance.',
+      }),
+    };
+  }
+}
+```
+
+`synthesizeSpeech()` return binary audio and its matching content type, ready to send from a controller:
+
+```ts
+const speech = await this.openAi.synthesizeSpeech(text, { voice: 'coral' });
+response.setHeader('Content-Type', speech.contentType);
+response.send(speech.audio);
+```
+
+
+### Streaming voice input
+
+`POST /api/openai/realtime/session` nanti ini yang buat  a short-lived, authenticated ephemeral key untuk di client browser WebRTC session. 
+
+Nanti browser kirim microphone stream langsung ke OpenAI, biar  `OPENAI_API_KEY` tetep private. Server voice activity nanti detect dan identifiy speech turns dari user ataupun agent sidenya and baru kirim balik response setelah brief pause. The Realtime data channel emits live di `conversation.item.input_audio_transcription.delta` 
+events nya ketika user sedang ngomong.
+
+> Note: Implementasi FE nya tolong cari tahu ya, ku gak ngeh soalnya apakah works or not
+
+```ts
+const tokenResponse = await fetch('/api/openai/realtime/session', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ language: 'en', voice: 'marin' }),
+});
+
+const { value: ephemeralKey } = await tokenResponse.json();
+
+const peerConnection = new RTCPeerConnection();
+const assistantAudio = new Audio();
+assistantAudio.autoplay = true;
+peerConnection.ontrack = ({ streams }) => {
+  const [stream] = streams;
+  if (stream) {
+    assistantAudio.srcObject = stream;
+  }
+};
+
+const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+microphone
+  .getTracks()
+  .forEach((track) => peerConnection.addTrack(track, microphone));
+
+const events = peerConnection.createDataChannel('oai-events');
+events.addEventListener('message', ({ data }) => {
+  const event = JSON.parse(data);
+
+  if (event.type === 'conversation.item.input_audio_transcription.delta') {
+    renderTranscript(event.delta);
+  }
+});
+
+const offer = await peerConnection.createOffer();
+await peerConnection.setLocalDescription(offer);
+
+const answerResponse = await fetch('https://api.openai.com/v1/realtime/calls', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${ephemeralKey}`,
+    'Content-Type': 'application/sdp',
+  },
+  body: offer.sdp,
+});
+
+await peerConnection.setRemoteDescription({
+  type: 'answer',
+  sdp: await answerResponse.text(),
+});
+```
+
+> AI GENERATED: 
+The endpoint requires the existing Supabase bearer token and hashes the user ID
+into OpenAI's safety identifier. To create a feature-specific voice experience,
+inject `OpenAiService` into that controller and call
+`createRealtimeClientSecret({ instructions: '...' })`; do not send a permanent
+OpenAI key to the browser. `getClient()` remains available for other OpenAI
+endpoints.

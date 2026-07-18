@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/request-with-use
 import { GoogleCalendarService } from './google-calendar.service';
 import { ConnectGoogleCalendarDto } from './dto/connect-google-calendar.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
+import { CreateEventDto } from './dto/create-event.dto';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('integrations/google-calendar')
@@ -35,6 +36,14 @@ export class GoogleCalendarController {
   @Delete()
   disconnect(@CurrentUser() user: AuthenticatedUser) {
     return this.googleCalendarService.disconnect(user.id);
+  }
+
+  @Post('events')
+  createEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateEventDto,
+  ) {
+    return this.googleCalendarService.createEvent(user.id, dto);
   }
 
   @Get('events')

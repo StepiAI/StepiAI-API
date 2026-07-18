@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Auth, calendar_v3, google } from 'googleapis';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateEventDto } from './dto/create-event.dto';
 
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
@@ -178,13 +179,32 @@ export class GoogleCalendarService {
     }
   }
 
-  async createEvent(userId: string, event: calendar_v3.Schema$Event) {
+  async createEvent(userId: string, input: CreateEventDto) {
+    const start = new Date(input.startDateTime);
+    const end = new Date(input.endDateTime);
+
+    if (end.getTime() <= start.getTime()) {
+      throw new BadRequestException('Event must end after it starts.');
+    }
+
     const calendar = await this.getCalendarClient(userId);
-    const { data } = await calendar.events.insert({
-      calendarId: 'primary',
-      requestBody: event,
-    });
-    return data;
+
+    try {
+      const { data } = await calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: {
+          summary: input.summary,
+          location: input.location,
+          description: input.description,
+          // dateTime udah bawa offset dari client, jadi gak perlu kirim timeZone
+          start: { dateTime: start.toISOString() },
+          end: { dateTime: end.toISOString() },
+        },
+      });
+      return data;
+    } catch (error) {
+      throw this.toGoogleApiException(error, 'create calendar event');
+    }
   }
 
   async patchEvent(

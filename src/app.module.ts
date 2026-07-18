@@ -8,6 +8,8 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './common/auth.module';
 import { ExampleModule } from './modules/example/example.module';
 import { OpenAiModule } from './openai/openai.module';
+import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
@@ -16,6 +18,7 @@ import { OpenAiModule } from './openai/openai.module';
     AuthModule,
     ExampleModule,
     OpenAiModule,
+    GoogleCalendarModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -17,13 +17,15 @@ model Example {
   @@map("examples")
 }
 
-model google_calendar_accounts {
-  id           String   @id @db.Uuid
+model GoogleCalendarAccount {
+  id           String   @id @default(uuid()) @db.Uuid
   userId       String   @unique @db.Uuid
   accessToken  String
   refreshToken String
   expiresAt    DateTime
   scope        String
   createdAt    DateTime @default(now())
-  updatedAt    DateTime
+  updatedAt    DateTime @updatedAt
+
+  @@map("google_calendar_accounts")
 }

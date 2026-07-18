@@ -7,7 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './common/auth.module';
 import { ExampleModule } from './modules/example/example.module';
-
+import { OpenAiModule } from './openai/openai.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
@@ -15,6 +15,7 @@ import { ExampleModule } from './modules/example/example.module';
     SupabaseModule,
     AuthModule,
     ExampleModule,
+    OpenAiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -57,6 +57,46 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## OpenAI integration
+
+Set `OPENAI_API_KEY` in the local `.env` file. `OpenAiModule` is global, so any
+controller or service can inject `OpenAiService` without adding another module
+import.
+
+```ts
+import { Body, Controller, Post } from '@nestjs/common';
+import { OpenAiService } from '../../openai/openai.service';
+
+@Controller('assistant')
+export class AssistantController {
+  constructor(private readonly openAi: OpenAiService) {}
+
+  @Post('reply')
+  async reply(@Body('prompt') prompt: string) {
+    return {
+      text: await this.openAi.generateText(prompt, {
+        instructions: 'Reply with concise, actionable guidance.',
+      }),
+    };
+  }
+}
+```
+
+`synthesizeSpeech()` returns binary audio and its matching content type, ready
+to send from a controller:
+
+```ts
+const speech = await this.openAi.synthesizeSpeech(text, { voice: 'coral' });
+response.setHeader('Content-Type', speech.contentType);
+response.send(speech.audio);
+```
+
+For an uploaded audio buffer, use
+`transcribeBuffer(file.buffer, file.originalname, file.mimetype)`. The service
+also exposes `createResponse()` for full Responses API requests and `getClient()`
+for image generation, realtime, and any future OpenAI endpoint not covered by a
+convenience helper.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

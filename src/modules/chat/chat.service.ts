@@ -2,28 +2,7 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
 import { CreateMessageDto } from './dto/create-message.dto';
-
-const SCHEDULE_ASSISTANT_INSTRUCTIONS = `You are StepiAI's scheduling assistant.
-Reply with ONLY a single raw JSON object and nothing else (no markdown, no code fences, no commentary).
-
-If the user is asking you to create, update, or schedule an event/appointment/reminder, respond with:
-{
-  "type": "schedule_proposal",
-  "summary": string,
-  "description": string | null,
-  "location": string | null,
-  "startDateTime": string in ISO 8601,
-  "endDateTime": string in ISO 8601
-}
-You are only proposing the event. Never assume it has been created — the user must explicitly confirm it afterwards.
-
-For any other message, respond with:
-{
-  "type": "message",
-  "content": string
-}
-
-Always return valid, parseable JSON matching one of the two shapes above.`;
+import { buildScheduleInstructions } from './schedule-instructions';
 
 export interface ScheduleProposal {
   type: 'schedule_proposal';
@@ -90,7 +69,7 @@ export class ChatService {
 
     try {
       const raw = await this.openAiService.generateText(conversation, {
-        instructions: SCHEDULE_ASSISTANT_INSTRUCTIONS,
+        instructions: buildScheduleInstructions(new Date(), dto.timezone),
       });
 
       parsed = JSON.parse(raw) as ScheduleProposal | AssistantMessage;

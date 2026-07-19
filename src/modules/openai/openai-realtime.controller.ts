@@ -1,25 +1,21 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { createHash } from 'node:crypto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
-import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
+// openai-realtime.controller.ts
+
+import { Body, Controller, Post } from '@nestjs/common';
 import { CreateRealtimeSessionDto } from './dto/create-realtime-session.dto';
 import { OpenAiService } from './openai.service';
 
-@UseGuards(SupabaseAuthGuard)
 @Controller('openai/realtime')
 export class OpenAiRealtimeController {
-  constructor(private readonly openAi: OpenAiService) {}
+  constructor(private readonly openAiService: OpenAiService) {}
 
   @Post('session')
-  createSession(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: CreateRealtimeSessionDto,
+  async createSession(
+    @Body()
+    dto: CreateRealtimeSessionDto,
   ) {
-    return this.openAi.createRealtimeClientSecret({
-      language: dto.language,
-      voice: dto.voice,
-      safetyIdentifier: createHash('sha256').update(user.id).digest('hex'),
-    });
+    return this.openAiService.createRealtimeClientSecret(
+      dto.language,
+      dto.voice,
+    );
   }
 }

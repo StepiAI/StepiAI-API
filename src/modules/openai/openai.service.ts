@@ -143,47 +143,26 @@ export class OpenAiService {
     return this.transcribeAudio(file, options);
   }
 
-  createRealtimeClientSecret(options: CreateRealtimeClientSecretOptions = {}) {
-    const requestOptions = options.safetyIdentifier
-      ? {
-          headers: {
-            'OpenAI-Safety-Identifier': options.safetyIdentifier,
-          },
-        }
-      : undefined;
-
-    return this.getClient().realtime.clientSecrets.create(
-      {
-        expires_after: {
-          anchor: 'created_at',
-          seconds: REALTIME_CLIENT_SECRET_TTL_SECONDS,
-        },
-        session: {
-          type: 'realtime',
-          model: options.model ?? DEFAULT_REALTIME_MODEL,
-          instructions: options.instructions ?? DEFAULT_REALTIME_INSTRUCTIONS,
-          output_modalities: ['audio'],
-          audio: {
-            input: {
-              noise_reduction: { type: 'near_field' },
-              transcription: {
-                model: DEFAULT_TRANSCRIPTION_MODEL,
-                language: options.language,
-              },
-              turn_detection: {
-                type: 'server_vad',
-                create_response: true,
-                interrupt_response: true,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
-              },
+  async createRealtimeClientSecret(language?: string, voice = 'marin') {
+    return this.getClient().realtime.clientSecrets.create({
+      session: {
+        type: 'realtime',
+        model: 'gpt-realtime',
+        instructions: 'You are a helpful voice assistant.',
+        output_modalities: ['audio'],
+        audio: {
+          input: {
+            transcription: {
+              model: 'gpt-4o-mini-transcribe',
+              language,
             },
-            output: { voice: options.voice ?? DEFAULT_REALTIME_VOICE },
+          },
+          output: {
+            voice,
           },
         },
       },
-      requestOptions,
-    );
+    });
   }
 
   generateImage(prompt: string) {

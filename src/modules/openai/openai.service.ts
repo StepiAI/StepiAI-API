@@ -3,22 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI, { toFile, type Uploadable } from 'openai';
 import { AppConfig } from '../../config/configuration';
 
-const DEFAULT_TEXT_MODEL = 'gpt-4.1-mini';
+const DEFAULT_TEXT_MODEL = 'gpt-5-nano';
 const DEFAULT_SPEECH_MODEL = 'gpt-4o-mini-tts';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
-const DEFAULT_IMAGE_MODEL = 'gpt-image-1.5';
-const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2.1';
-const DEFAULT_REALTIME_VOICE = 'marin';
-const REALTIME_CLIENT_SECRET_TTL_SECONDS = 60;
-const DEFAULT_REALTIME_INSTRUCTIONS =
-  'You are a helpful voice assistant. Respond conversationally and concisely.';
 
 const speechContentTypes = {
   mp3: 'audio/mpeg',
-  opus: 'audio/ogg; codecs=opus',
-  aac: 'audio/aac',
-  flac: 'audio/flac',
-  wav: 'audio/wav',
   pcm: 'audio/L16',
 } as const;
 
@@ -43,14 +33,6 @@ export interface TranscribeAudioOptions {
   language?: string;
   prompt?: string;
   temperature?: number;
-}
-
-export interface CreateRealtimeClientSecretOptions {
-  model?: string;
-  instructions?: string;
-  voice?: string;
-  language?: string;
-  safetyIdentifier?: string;
 }
 
 export interface GeneratedSpeech {
@@ -141,34 +123,5 @@ export class OpenAiService {
   ): Promise<string> {
     const file = await toFile(audio, filename, { type: mimeType });
     return this.transcribeAudio(file, options);
-  }
-
-  async createRealtimeClientSecret(language?: string, voice = 'marin') {
-    return this.getClient().realtime.clientSecrets.create({
-      session: {
-        type: 'realtime',
-        model: 'gpt-realtime',
-        instructions: 'You are a helpful voice assistant.',
-        output_modalities: ['audio'],
-        audio: {
-          input: {
-            transcription: {
-              model: 'gpt-4o-mini-transcribe',
-              language,
-            },
-          },
-          output: {
-            voice,
-          },
-        },
-      },
-    });
-  }
-
-  generateImage(prompt: string) {
-    return this.getClient().images.generate({
-      model: DEFAULT_IMAGE_MODEL,
-      prompt,
-    });
   }
 }

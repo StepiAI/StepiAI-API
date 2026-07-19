@@ -6,10 +6,10 @@ import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { AuthModule } from './common/auth.module';
-import { ExampleModule } from './modules/example/example.module';
 import { OpenAiModule } from './modules/openai/openai.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { StudyPlanModule } from './modules/studyPlan/studyplan.module';
 
 @Module({
   imports: [
@@ -17,10 +17,10 @@ import { ChatModule } from './modules/chat/chat.module';
     PrismaModule,
     SupabaseModule,
     AuthModule,
-    ExampleModule,
     OpenAiModule,
     GoogleCalendarModule,
     ChatModule,
+    StudyPlanModule,
   ],
   controllers: [AppController],
   providers: [AppService],

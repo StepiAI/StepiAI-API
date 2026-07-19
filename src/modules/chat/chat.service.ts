@@ -27,6 +27,11 @@ export interface AssistantMessage {
   content: string;
 }
 
+export interface NeedsInfoMessage {
+  type: 'need_info';
+  content: string;
+}
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -81,14 +86,15 @@ export class ChatService {
       .map((message) => `${message.role}: ${message.content}`)
       .join('\n');
 
-    let parsed: ScheduleProposal | AssistantMessage;
+    let parsed: ScheduleProposal | AssistantMessage | NeedsInfoMessage;
 
     try {
       const raw = await this.openAiService.generateText(conversation, {
         instructions: buildScheduleInstructions(new Date(), dto.timezone),
       });
 
-      parsed = JSON.parse(raw) as ScheduleProposal | AssistantMessage;
+      parsed = JSON.parse(raw) as
+        ScheduleProposal | AssistantMessage | NeedsInfoMessage;
     } catch (error) {
       throw new InternalServerErrorException(
         'Unable to get a response from the AI assistant',
@@ -135,9 +141,11 @@ export class ChatService {
     return {
       chatId: chat.id,
       userMessage,
+      parsed,
       assistantMessage,
       requiresConfirmation: isScheduleProposal,
       proposal: isScheduleProposal ? (parsed as ScheduleProposal) : undefined,
+      isNeedMoreData: parsed.type === 'need_info',
       schedule,
     };
   }

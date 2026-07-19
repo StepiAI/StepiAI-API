@@ -19,12 +19,12 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Get()
-  getMyChat(@CurrentUser() user: AuthenticatedUser) {
+  async getMyChat(@CurrentUser() user: AuthenticatedUser) {
     return this.chatService.getOrCreateChat(user.id);
   }
 
   @Post('messages')
-  sendMessage(
+  async sendMessage(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateMessageDto,
   ) {
@@ -32,7 +32,7 @@ export class ChatController {
   }
 
   @Post('messages/:messageId/accept')
-  acceptSchedule(
+  async acceptSchedule(
     @CurrentUser() user: AuthenticatedUser,
     @Param('messageId', ParseUUIDPipe) messageId: string,
   ) {

@@ -1,4 +1,10 @@
-import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export const realtimeVoices = [
   'alloy',
@@ -22,4 +28,9 @@ export class CreateRealtimeSessionDto {
   @IsOptional()
   @IsIn(realtimeVoices)
   voice?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }

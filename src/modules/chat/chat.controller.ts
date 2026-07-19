@@ -23,6 +23,14 @@ export class ChatController {
     return this.chatService.getOrCreateChat(user.id);
   }
 
+  @Get(':chatId')
+  getChatById(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('chatId', ParseUUIDPipe) chatId: string,
+  ) {
+    return this.chatService.getChatById(user.id, chatId);
+  }
+
   @Post('messages')
   sendMessage(
     @CurrentUser() user: AuthenticatedUser,

@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+  <html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Uji Agen Jadwal StepiAI</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #667085;
+      --line: #d9dee7;
+      --accent: #0f766e;
+      --accent-strong: #0b5f59;
+      --danger: #b42318;
+      --log: #111827;
+      --log-text: #8ef2b0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 24px auto;
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    section,
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    aside {
+      padding: 16px;
+      height: fit-content;
+    }
+
+    section {
+      min-height: calc(100vh - 48px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: #fff;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      background: var(--accent);
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--accent-strong);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    button.secondary {
+      background: #eef2f6;
+      color: var(--text);
+    }
+
+    button.secondary:hover {
+      background: #e3e8ef;
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .topbar {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .messages {
+      padding: 16px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bubble {
+      width: fit-content;
+      max-width: min(680px, 100%);
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .bubble.user {
+      margin-left: auto;
+      background: #e8f4f2;
+      border-color: #b9ddd8;
+    }
+
+    .bubble.assistant {
+      margin-right: auto;
+    }
+
+    .bubble.system {
+      width: 100%;
+      max-width: 100%;
+      background: #fff8e6;
+      border-color: #fedf89;
+    }
+
+    .composer {
+      padding: 16px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+
+    .proposal {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid #b9ddd8;
+      border-radius: 8px;
+      background: #f0faf8;
+      display: grid;
+      gap: 8px;
+    }
+
+    .proposal dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 6px 10px;
+      font-size: 14px;
+    }
+
+    .proposal dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .proposal dd {
+      margin: 0;
+    }
+
+    #logs {
+      margin-top: 16px;
+      padding: 12px;
+      min-height: 240px;
+      max-height: 360px;
+      overflow: auto;
+      border-radius: 8px;
+      background: var(--log);
+      color: var(--log-text);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      background: rgba(15, 23, 42, 0.42);
+      z-index: 10;
+    }
+
+    .modal-backdrop.open {
+      display: grid;
+    }
+
+    .modal {
+      width: min(520px, 100%);
+      padding: 18px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+    }
+
+    @media (max-width: 860px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        min-height: 640px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <aside class="stack">
+      <div>
+        <h1>Uji Agen StepiAI</h1>
+        <div class="hint">Chat teks memakai alur cek bentrok jadwal dari backend. RTC memakai prompt penjadwalan dan mencatat semua event realtime.</div>
+      </div>
+
+      <label>
+        URL dasar API
+        <input id="apiBase" value="http://localhost:3000/api" />
+      </label>
+
+      <label>
+        Token akses Supabase
+        <input id="accessToken" type="password" placeholder="Token bearer" />
+      </label>
+
+      <label>
+        Zona waktu
+        <input id="timezone" />
+      </label>
+
+      <div class="row">
+        <label style="flex: 1; margin-top: 0;">
+          Bahasa
+          <input id="language" value="id" />
+        </label>
+        <label style="flex: 1; margin-top: 0;">
+          Suara
+          <select id="voice">
+            <option value="marin">marin</option>
+            <option value="cedar">cedar</option>
+            <option value="coral">coral</option>
+            <option value="alloy">alloy</option>
+            <option value="ash">ash</option>
+            <option value="sage">sage</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="connectRtc">Hubungkan RTC</button>
+        <button id="disconnectRtc" class="secondary" disabled>Putuskan</button>
+      </div>
+
+      <div class="row">
+        <button id="clearLogs" class="secondary">Bersihkan log</button>
+        <button id="loadChat" class="secondary">Muat chat</button>
+      </div>
+
+      <label>
+        ID chat uji
+        <input id="debugChatId" placeholder="fdcf3723-54a7-4a34-ad38-c45764ba0fdb" />
+      </label>
+
+      <div class="row">
+        <button id="loadChatById" class="secondary">Muat dari ID</button>
+        <button id="openPendingProposal" class="secondary">Buka popup tertunda</button>
+      </div>
+
+      <div id="logs"></div>
+    </aside>
+
+    <section>
+      <div class="topbar">
+        <div>
+          <h2>Chat Jadwal</h2>
+          <div class="hint">Popup persetujuan hanya muncul kalau backend mengembalikan proposal jadwal yang sudah aman.</div>
+        </div>
+      </div>
+
+      <div id="messages" class="messages"></div>
+
+      <form id="chatForm" class="composer">
+        <textarea id="messageInput" placeholder="Contoh: Jadwalkan gym besok jam 5 sore"></textarea>
+        <div class="row">
+          <button id="sendMessage" type="submit">Kirim</button>
+          <button id="exampleConflict" class="secondary" type="button">Contoh bentrok</button>
+          <button id="exampleMissing" class="secondary" type="button">Contoh info kurang</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="approvalBackdrop" class="modal-backdrop">
+    <div class="modal stack">
+      <h2>Konfirmasi jadwal</h2>
+      <div id="approvalDetails"></div>
+      <div class="row">
+        <button id="confirmSchedule">Konfirmasi</button>
+        <button id="cancelApproval" class="secondary">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const els = {
+      apiBase: document.getElementById("apiBase"),
+      accessToken: document.getElementById("accessToken"),
+      timezone: document.getElementById("timezone"),
+      language: document.getElementById("language"),
+      voice: document.getElementById("voice"),
+      logs: document.getElementById("logs"),
+      messages: document.getElementById("messages"),
+      chatForm: document.getElementById("chatForm"),
+      messageInput: document.getElementById("messageInput"),
+      sendMessage: document.getElementById("sendMessage"),
+      connectRtc: document.getElementById("connectRtc"),
+      disconnectRtc: document.getElementById("disconnectRtc"),
+      clearLogs: document.getElementById("clearLogs"),
+      loadChat: document.getElementById("loadChat"),
+      debugChatId: document.getElementById("debugChatId"),
+      loadChatById: document.getElementById("loadChatById"),
+      openPendingProposal: document.getElementById("openPendingProposal"),
+      exampleConflict: document.getElementById("exampleConflict"),
+      exampleMissing: document.getElementById("exampleMissing"),
+      approvalBackdrop: document.getElementById("approvalBackdrop"),
+      approvalDetails: document.getElementById("approvalDetails"),
+      confirmSchedule: document.getElementById("confirmSchedule"),
+      cancelApproval: document.getElementById("cancelApproval"),
+    };
+
+    els.timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
+
+    let pc = null;
+    let dc = null;
+    let microphoneStream = null;
+    let pendingApproval = null;
+    let activeResponseText = "";
+    let activeUserTranscript = "";
+    let lastUserTranscript = "";
+    let isValidatingVoice = false;
+    const openingMessage =
+      "Halo, aku StepiAI. Mau aku bantu jadwalkan apa hari ini?";
+
+    function config() {
+      return {
+        apiBase: els.apiBase.value.replace(/\/$/, ""),
+        token: els.accessToken.value.trim(),
+        timezone: els.timezone.value.trim() || "Asia/Jakarta",
+        language: els.language.value.trim() || "id",
+        voice: els.voice.value,
+      };
+    }
+
+    function authHeaders(extra = {}) {
+      const { token } = config();
+      return {
+        ...extra,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+    }
+
+    function log(...args) {
+      console.log(...args);
+      els.logs.textContent +=
+        args
+          .map((item) =>
+            typeof item === "object" ? JSON.stringify(item, null, 2) : String(item)
+          )
+          .join(" ") + "\n";
+      els.logs.scrollTop = els.logs.scrollHeight;
+    }
+
+    function addBubble(role, content, data) {
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${role}`;
+      bubble.textContent = content;
+
+      if (data?.type === "schedule_proposal") {
+        bubble.appendChild(renderProposal(data));
+      }
+
+      els.messages.appendChild(bubble);
+      els.messages.scrollTop = els.messages.scrollHeight;
+      return bubble;
+    }
+
+    function renderProposal(proposal) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "proposal";
+      wrapper.innerHTML = `
+        <dl>
+          <dt>Judul</dt><dd>${escapeHtml(proposal.summary)}</dd>
+          <dt>Mulai</dt><dd>${escapeHtml(formatDateTime(proposal.startDateTime))}</dd>
+          <dt>Selesai</dt><dd>${escapeHtml(formatDateTime(proposal.endDateTime))}</dd>
+          <dt>Lokasi</dt><dd>${escapeHtml(proposal.location || "-")}</dd>
+          <dt>Catatan</dt><dd>${escapeHtml(proposal.description || "-")}</dd>
+        </dl>
+      `;
+      return wrapper;
+    }
+
+    function showApproval(messageId, proposal) {
+      pendingApproval = { messageId, proposal };
+      els.approvalDetails.innerHTML = "";
+      els.approvalDetails.appendChild(renderProposal(proposal));
+      els.approvalBackdrop.classList.add("open");
+    }
+
+    function closeApproval() {
+      pendingApproval = null;
+      els.approvalBackdrop.classList.remove("open");
+    }
+
+    async function loadChat() {
+      const { apiBase } = config();
+      const response = await fetch(`${apiBase}/chats`, {
+        headers: authHeaders(),
+      });
+      const data = await parseResponse(response);
+
+      renderChat(data);
+      log("Chat berhasil dimuat:", data);
+      return data;
+    }
+
+    async function loadChatById() {
+      const chatId = els.debugChatId.value.trim();
+      if (!chatId) {
+        throw new Error("Tempel ID chat dulu.");
+      }
+
+      const { apiBase } = config();
+      const response = await fetch(`${apiBase}/chats/${chatId}`, {
+        headers: authHeaders(),
+      });
+      const data = await parseResponse(response);
+
+      renderChat(data);
+      log("Chat dari ID berhasil dimuat:", data);
+      return data;
+    }
+
+    async function openPendingProposalFromChatId() {
+      const chat = await loadChatById();
+      const pending = findLatestPendingProposal(chat);
+
+      if (!pending) {
+        addBubble("system", "Tidak ada proposal jadwal tertunda di chat itu.");
+        log("Tidak ada proposal jadwal tertunda:", chat);
+        return;
+      }
+
+      showApproval(pending.messageId, pending.proposal);
+      addBubble("system", `Proposal tertunda dari chat ${chat.id} sudah dibuka.`);
+      log("Proposal tertunda dibuka:", pending);
+    }
+
+    function renderChat(chat) {
+      els.messages.innerHTML = "";
+
+      for (const message of chat.messages || []) {
+        const parsed = parseJsonMaybe(message.content) ?? message.content;
+        addBubble(
+          message.role === "user" ? "user" : "assistant",
+          displayContent(parsed),
+          parsed
+        );
+      }
+    }
+
+    function findLatestPendingProposal(chat) {
+      const messages = [...(chat.messages || [])].reverse();
+
+      for (const message of messages) {
+        const schedule = message.schedule;
+
+        if (
+          message.isScheduleProposal &&
+          schedule &&
+          schedule.status === "PENDING"
+        ) {
+          return {
+            messageId: message.id,
+            proposal: {
+              type: "schedule_proposal",
+              summary: schedule.summary,
+              description: schedule.description,
+              location: schedule.location,
+              startDateTime: schedule.startDateTime,
+              endDateTime: schedule.endDateTime,
+            },
+          };
+        }
+
+        const parsed = parseJsonMaybe(message.content);
+        if (message.isScheduleProposal && parsed?.type === "schedule_proposal") {
+          return {
+            messageId: message.id,
+            proposal: parsed,
+          };
+        }
+      }
+
+      return null;
+    }
+
+    async function sendChatMessage(content, options = {}) {
+      const { apiBase, timezone } = config();
+
+      if (!options.suppressUserBubble) {
+        addBubble("user", content);
+      }
+
+      els.sendMessage.disabled = true;
+
+      try {
+        const response = await fetch(`${apiBase}/chats/messages`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ content, timezone }),
+        });
+        const data = await parseResponse(response);
+        const parsed =
+          parseJsonMaybe(data.assistantMessage?.content) ??
+          data.assistantMessage?.content;
+
+        addBubble("assistant", displayContent(parsed), parsed);
+        log("Respons chat:", data);
+
+        handleBackendScheduleState(data, parsed);
+
+        if (options.speakResult) {
+          speakWithRtc(buildSpokenBackendResult(data, parsed));
+        }
+
+        return data;
+      } catch (error) {
+        addBubble("system", `ERROR: ${error.message}`);
+        log("Error chat:", error.message);
+      } finally {
+        els.sendMessage.disabled = false;
+      }
+    }
+
+    async function confirmSchedule() {
+      if (!pendingApproval) return;
+
+      const { apiBase } = config();
+      els.confirmSchedule.disabled = true;
+
+      try {
+        const response = await fetch(
+          `${apiBase}/chats/messages/${pendingApproval.messageId}/accept`,
+          {
+            method: "POST",
+            headers: authHeaders(),
+          }
+        );
+        const data = await parseResponse(response);
+        log("Jadwal dikonfirmasi:", data);
+        addBubble("system", "Jadwal sudah dikonfirmasi.");
+        closeApproval();
+
+        if (data.closeAgent) {
+          await disconnectRtc();
+          addBubble("system", "Agen ditutup setelah konfirmasi.");
+        }
+      } catch (error) {
+        log("Error konfirmasi:", error.message);
+        addBubble("system", `ERROR: ${error.message}`);
+      } finally {
+        els.confirmSchedule.disabled = false;
+      }
+    }
+
+    async function connectRtc() {
+      const { apiBase, timezone, language, voice } = config();
+      els.connectRtc.disabled = true;
+      activeResponseText = "";
+
+      try {
+        log("Mengambil client secret realtime...");
+        const sessionResponse = await fetch(`${apiBase}/openai/realtime/session`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ language, voice, timezone }),
+        });
+        const session = await parseResponse(sessionResponse);
+        const token = session.value;
+
+        if (!token) {
+          throw new Error("session.value tidak dikembalikan");
+        }
+
+        log("Sesi realtime:", session);
+
+        pc = new RTCPeerConnection();
+        pc.onconnectionstatechange = () => log("Koneksi RTC:", pc.connectionState);
+        pc.oniceconnectionstatechange = () => log("ICE:", pc.iceConnectionState);
+
+        const audio = document.createElement("audio");
+        audio.autoplay = true;
+        pc.ontrack = (event) => {
+          log("Menerima audio");
+          audio.srcObject = event.streams[0];
+        };
+
+        log("Meminta akses mikrofon...");
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        microphoneStream.getTracks().forEach((track) => {
+          pc.addTrack(track, microphoneStream);
+        });
+
+        dc = pc.createDataChannel("oai-events");
+        dc.onopen = () => {
+          log("Data channel terbuka");
+          addBubble("assistant", openingMessage);
+          dc.send(JSON.stringify({
+            type: "response.create",
+            response: {
+              output_modalities: ["audio"],
+              instructions:
+                `Ucapkan persis kalimat ini secara natural: ${openingMessage}`
+            }
+          }));
+        };
+        dc.onmessage = handleRealtimeEvent;
+
+        log("Membuat SDP offer...");
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        log("Mengirim SDP ke OpenAI...");
+        const rtcResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/sdp",
+          },
+          body: offer.sdp,
+        });
+
+        const answerSdp = await rtcResponse.text();
+        log("Status RTC OpenAI:", rtcResponse.status);
+
+        if (!rtcResponse.ok) {
+          throw new Error(answerSdp);
+        }
+
+        await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        els.disconnectRtc.disabled = false;
+        log("RTC terhubung");
+      } catch (error) {
+        log("Error RTC:", error.message || String(error));
+        await disconnectRtc();
+      } finally {
+        els.connectRtc.disabled = false;
+      }
+    }
+
+    function handleRealtimeEvent(event) {
+      const data = parseJsonMaybe(event.data);
+      log("Event RTC:", data);
+
+      if (!data || typeof data !== "object") {
+        return;
+      }
+
+      if (
+        data.type === "conversation.item.input_audio_transcription.delta" &&
+        data.delta
+      ) {
+        activeUserTranscript += data.delta;
+      }
+
+      if (
+        data.type === "conversation.item.input_audio_transcription.completed" &&
+        data.transcript
+      ) {
+        lastUserTranscript = data.transcript;
+        activeUserTranscript = "";
+        addBubble("user", data.transcript);
+        validateVoiceScheduleWithBackend();
+      }
+
+      if (
+        (data.type === "response.text.delta" ||
+          data.type === "response.output_text.delta" ||
+          data.type === "response.audio_transcript.delta") &&
+        data.delta
+      ) {
+        activeResponseText += data.delta;
+      }
+
+      if (
+        (data.type === "response.text.done" ||
+          data.type === "response.output_text.done" ||
+          data.type === "response.audio_transcript.done") &&
+        (data.text || data.transcript)
+      ) {
+        activeResponseText = data.text || data.transcript;
+      }
+
+      if (data.type === "response.done") {
+        const parsed = parseAssistantJsonFromRealtime(data) || parseJsonMaybe(activeResponseText);
+        if (parsed && typeof parsed === "object" && parsed.type) {
+          addBubble("assistant", displayContent(parsed), parsed);
+        }
+        activeResponseText = "";
+      }
+    }
+
+    async function validateVoiceScheduleWithBackend() {
+      const transcript = (lastUserTranscript || activeUserTranscript).trim();
+
+      if (isValidatingVoice) {
+        return;
+      }
+
+      if (!transcript) {
+        addBubble(
+          "system",
+          "Suara mengembalikan proposal jadwal, tapi transkrip tidak tersedia untuk dicek ke backend."
+        );
+        return;
+      }
+
+      isValidatingVoice = true;
+      addBubble("system", "Sedang cek kalender...");
+
+      try {
+        await sendChatMessage(transcript, {
+          suppressUserBubble: true,
+          speakResult: true,
+        });
+        lastUserTranscript = "";
+        activeUserTranscript = "";
+      } finally {
+        isValidatingVoice = false;
+      }
+    }
+
+    function handleBackendScheduleState(data, parsed) {
+      const proposal =
+        data.proposal ||
+        (parsed && parsed.type === "schedule_proposal" ? parsed : null);
+      const messageId = data.assistantMessage?.id || data.schedule?.messageId;
+
+      if (data.requiresConfirmation && proposal && messageId) {
+        showApproval(messageId, proposal);
+        return;
+      }
+
+      if (parsed?.type === "schedule_proposal" && !data.requiresConfirmation) {
+        addBubble(
+          "system",
+          "Popup belum muncul karena backend belum menandai proposal ini siap dikonfirmasi."
+        );
+        return;
+      }
+
+      if (parsed?.type === "missing_information") {
+        addBubble("system", "Popup belum muncul karena masih ada informasi jadwal yang kurang.");
+        return;
+      }
+
+      if (data.conflictAnalysis?.hasConflict || data.conflictAnalysis?.hasTightBuffer) {
+        addBubble(
+          "system",
+          "Popup belum muncul karena backend menemukan jadwal bentrok atau terlalu mepet. Pilih jam lain dulu."
+        );
+      }
+    }
+
+    function buildSpokenBackendResult(data, parsed) {
+      if (parsed?.type === "message") {
+        return parsed.content;
+      }
+
+      if (parsed?.type === "missing_information") {
+        return parsed.question;
+      }
+
+      if (data.requiresConfirmation && data.proposal) {
+        return `Bisa. Aku sudah siapkan ${data.proposal.summary} ${formatSpokenRange(
+          data.proposal.startDateTime,
+          data.proposal.endDateTime
+        )}. Cek popup untuk konfirmasi.`;
+      }
+
+      if (parsed?.type === "schedule_proposal") {
+        return `Aku sudah siapkan ${parsed.summary} ${formatSpokenRange(
+          parsed.startDateTime,
+          parsed.endDateTime
+        )}. Cek popup untuk konfirmasi.`;
+      }
+
+      return "Aku sudah cek jadwalnya.";
+    }
+
+    function speakWithRtc(text) {
+      if (!text || !dc || dc.readyState !== "open") {
+        return;
+      }
+
+      dc.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          output_modalities: ["audio"],
+          instructions:
+            `Ucapkan ini secara natural dalam Bahasa Indonesia. Jangan sebut JSON, field, schema, ISO timestamp, atau offset timezone: ${text}`
+        }
+      }));
+    }
+
+    async function disconnectRtc() {
+      if (dc) {
+        dc.close();
+        dc = null;
+      }
+
+      if (pc) {
+        pc.getSenders().forEach((sender) => sender.track?.stop());
+        pc.close();
+        pc = null;
+      }
+
+      if (microphoneStream) {
+        microphoneStream.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
+      }
+
+      els.disconnectRtc.disabled = true;
+    }
+
+    function parseAssistantJsonFromRealtime(event) {
+      const outputs = event.response?.output || [];
+
+      for (const output of outputs) {
+        for (const content of output.content || []) {
+          const raw = content.text || content.transcript;
+          const parsed = parseJsonMaybe(raw);
+          if (parsed && typeof parsed === "object" && parsed.type) {
+            return parsed;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    async function parseResponse(response) {
+      const text = await response.text();
+      const data = parseJsonMaybe(text) ?? text;
+
+      if (!response.ok) {
+        const detail =
+          typeof data === "object" ? data.message || JSON.stringify(data) : data;
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+
+      return data;
+    }
+
+    function parseJsonMaybe(value) {
+      if (typeof value !== "string") return value;
+
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    function displayContent(parsed) {
+      if (!parsed || typeof parsed !== "object") return String(parsed ?? "");
+
+      if (parsed.type === "message") return parsed.content;
+      if (parsed.type === "missing_information") return parsed.question;
+      if (parsed.type === "schedule_proposal") return "Proposal jadwal sudah siap.";
+
+      return JSON.stringify(parsed, null, 2);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "-";
+
+      return new Intl.DateTimeFormat("id-ID", {
+        timeZone: config().timezone,
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(value));
+    }
+
+    function formatSpokenRange(startValue, endValue) {
+      const formatter = new Intl.DateTimeFormat("id-ID", {
+        timeZone: config().timezone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+
+      return `jam ${formatter.format(new Date(startValue))} sampai ${formatter.format(
+        new Date(endValue)
+      )}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    els.chatForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const content = els.messageInput.value.trim();
+      if (!content) return;
+
+      els.messageInput.value = "";
+      sendChatMessage(content);
+    });
+
+    els.exampleConflict.addEventListener("click", () => {
+      els.messageInput.value = "Jadwalkan gym besok jam 5 sore";
+      els.messageInput.focus();
+    });
+
+    els.exampleMissing.addEventListener("click", () => {
+      els.messageInput.value = "Jadwalkan meeting besok";
+      els.messageInput.focus();
+    });
+
+    els.connectRtc.addEventListener("click", connectRtc);
+    els.disconnectRtc.addEventListener("click", disconnectRtc);
+    els.clearLogs.addEventListener("click", () => {
+      els.logs.textContent = "";
+    });
+    els.loadChat.addEventListener("click", () => {
+      loadChat().catch((error) => log("Error muat chat:", error.message));
+    });
+    els.loadChatById.addEventListener("click", () => {
+      loadChatById().catch((error) => log("Error muat chat dari ID:", error.message));
+    });
+    els.openPendingProposal.addEventListener("click", () => {
+      openPendingProposalFromChatId().catch((error) =>
+        log("Error buka proposal tertunda:", error.message)
+      );
+    });
+    els.confirmSchedule.addEventListener("click", confirmSchedule);
+    els.cancelApproval.addEventListener("click", closeApproval);
+
+    addBubble("assistant", openingMessage);
+    addBubble("system", "Siap. Tempel token akses Supabase, lalu kirim permintaan jadwal.");
+  </script>
+</body>
+</html>

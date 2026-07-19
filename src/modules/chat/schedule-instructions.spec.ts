@@ -71,7 +71,9 @@ describe('buildScheduleInstructions', () => {
   it('larang model ngubah jam yang disebut user jadi UTC', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain('never convert the time the user said into UTC');
+    expect(instructions).toContain(
+      'jangan pernah mengubah jam yang user sebut menjadi UTC',
+    );
     expect(instructions).toContain('15:00');
   });
 

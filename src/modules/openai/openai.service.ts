@@ -3,22 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI, { toFile, type Uploadable } from 'openai';
 import { AppConfig } from '../../config/configuration';
 
-const DEFAULT_TEXT_MODEL = 'gpt-4.1-mini';
+const DEFAULT_TEXT_MODEL = 'gpt-5-nano';
 const DEFAULT_SPEECH_MODEL = 'gpt-4o-mini-tts';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
-const DEFAULT_IMAGE_MODEL = 'gpt-image-1.5';
-const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2.1';
-const DEFAULT_REALTIME_VOICE = 'marin';
-const REALTIME_CLIENT_SECRET_TTL_SECONDS = 60;
-const DEFAULT_REALTIME_INSTRUCTIONS =
-  'You are a helpful voice assistant. Respond conversationally and concisely.';
 
 const speechContentTypes = {
   mp3: 'audio/mpeg',
-  opus: 'audio/ogg; codecs=opus',
-  aac: 'audio/aac',
-  flac: 'audio/flac',
-  wav: 'audio/wav',
   pcm: 'audio/L16',
 } as const;
 
@@ -43,14 +33,6 @@ export interface TranscribeAudioOptions {
   language?: string;
   prompt?: string;
   temperature?: number;
-}
-
-export interface CreateRealtimeClientSecretOptions {
-  model?: string;
-  instructions?: string;
-  voice?: string;
-  language?: string;
-  safetyIdentifier?: string;
 }
 
 export interface GeneratedSpeech {
@@ -141,55 +123,5 @@ export class OpenAiService {
   ): Promise<string> {
     const file = await toFile(audio, filename, { type: mimeType });
     return this.transcribeAudio(file, options);
-  }
-
-  createRealtimeClientSecret(options: CreateRealtimeClientSecretOptions = {}) {
-    const requestOptions = options.safetyIdentifier
-      ? {
-          headers: {
-            'OpenAI-Safety-Identifier': options.safetyIdentifier,
-          },
-        }
-      : undefined;
-
-    return this.getClient().realtime.clientSecrets.create(
-      {
-        expires_after: {
-          anchor: 'created_at',
-          seconds: REALTIME_CLIENT_SECRET_TTL_SECONDS,
-        },
-        session: {
-          type: 'realtime',
-          model: options.model ?? DEFAULT_REALTIME_MODEL,
-          instructions: options.instructions ?? DEFAULT_REALTIME_INSTRUCTIONS,
-          output_modalities: ['audio'],
-          audio: {
-            input: {
-              noise_reduction: { type: 'near_field' },
-              transcription: {
-                model: DEFAULT_TRANSCRIPTION_MODEL,
-                language: options.language,
-              },
-              turn_detection: {
-                type: 'server_vad',
-                create_response: true,
-                interrupt_response: true,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
-              },
-            },
-            output: { voice: options.voice ?? DEFAULT_REALTIME_VOICE },
-          },
-        },
-      },
-      requestOptions,
-    );
-  }
-
-  generateImage(prompt: string) {
-    return this.getClient().images.generate({
-      model: DEFAULT_IMAGE_MODEL,
-      prompt,
-    });
   }
 }

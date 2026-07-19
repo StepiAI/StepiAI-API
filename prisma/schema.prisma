@@ -91,3 +91,38 @@ model ChatProvider {
 
   @@map("chat_providers")
 }
+
+model StudyPlan {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String          @map("user_id") @db.Uuid
+  title           String
+  goal            String
+  topics          String[]
+  startDate       DateTime        @map("start_date") @db.Date
+  endDate         DateTime        @map("end_date") @db.Date
+  availableDays   Weekday[]       @map("available_days")
+  startTime       String          @map("start_time")
+  endTime         String          @map("end_time")
+  difficultyLevel DifficultyLevel @map("difficulty_level")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([userId], map: "idx_study_plans_user_id")
+  @@map("study_plans")
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}

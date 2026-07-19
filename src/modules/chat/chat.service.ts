@@ -11,44 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleCalendarService } from '../google-calendar/google-calendar.service';
 import { OpenAiService } from '../openai/openai.service';
 import { CreateMessageDto } from './dto/create-message.dto';
-
-const WIB_OFFSET_HOURS = 7;
-
-/** Formats a date as ISO 8601 shifted by a fixed UTC offset, e.g. 2026-07-19T15:58:41+07:00. */
-function formatWithOffset(date: Date, offsetHours: number): string {
-  const shifted = new Date(date.getTime() + offsetHours * 60 * 60 * 1000);
-  const sign = offsetHours >= 0 ? '+' : '-';
-  const hh = String(Math.abs(offsetHours)).padStart(2, '0');
-  return `${shifted.toISOString().slice(0, 19)}${sign}${hh}:00`;
-}
-
-function buildScheduleAssistantInstructions(now: Date): string {
-  const currentDateTime = formatWithOffset(now, WIB_OFFSET_HOURS);
-
-  return `You are StepiAI's scheduling assistant.
-Reply with ONLY a single raw JSON object and nothing else (no markdown, no code fences, no commentary).
-
-The current date and time is ${currentDateTime} (Asia/Jakarta, WIB, UTC+7). Treat this as "now" and resolve any relative date or time the user mentions (today, tomorrow, besok, hari ini, minggu depan, jam 1 siang, etc.) relative to it. Unless the user specifies another timezone, assume Asia/Jakarta (UTC+7) and return startDateTime/endDateTime as ISO 8601 with the "+07:00" offset.
-
-If the user is asking you to create, update, or schedule an event/appointment/reminder, respond with:
-{
-  "type": "schedule_proposal",
-  "summary": string,
-  "description": string | null,
-  "location": string | null,
-  "startDateTime": string in ISO 8601 with UTC offset,
-  "endDateTime": string in ISO 8601 with UTC offset
-}
-You are only proposing the event. Never assume it has been created — the user must explicitly confirm it afterwards.
-
-For any other message, respond with:
-{
-  "type": "message",
-  "content": string
-}
-
-Always return valid, parseable JSON matching one of the two shapes above.`;
-}
+import { buildScheduleInstructions } from './schedule-instructions';
 
 export interface ScheduleProposal {
   type: 'schedule_proposal';
@@ -122,7 +85,7 @@ export class ChatService {
 
     try {
       const raw = await this.openAiService.generateText(conversation, {
-        instructions: buildScheduleAssistantInstructions(new Date()),
+        instructions: buildScheduleInstructions(new Date(), dto.timezone),
       });
 
       parsed = JSON.parse(raw) as ScheduleProposal | AssistantMessage;

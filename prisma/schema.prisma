@@ -43,17 +43,42 @@ model Chat {
 }
 
 model Message {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  chatId             String   @map("chat_id") @db.Uuid
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  chatId             String    @map("chat_id") @db.Uuid
   role               String
   content            String
-  isScheduleProposal Boolean  @default(false) @map("is_schedule_proposal")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  chat               Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  isScheduleProposal Boolean   @default(false) @map("is_schedule_proposal")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  chat               Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  schedule           Schedule?
 
   @@index([chatId, createdAt], map: "idx_messages_chat_created")
   @@index([chatId], map: "idx_messages_chat_id")
   @@map("messages")
+}
+
+model Schedule {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String         @map("user_id") @db.Uuid
+  messageId             String?        @unique @map("message_id") @db.Uuid
+  summary               String
+  description           String?
+  location              String?
+  startDateTime         DateTime       @map("start_date_time") @db.Timestamptz(6)
+  endDateTime           DateTime       @map("end_date_time") @db.Timestamptz(6)
+  status                ScheduleStatus @default(PENDING)
+  googleCalendarEventId String?        @map("google_calendar_event_id")
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  message               Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_schedules_user_id")
+  @@map("schedules")
+}
+
+enum ScheduleStatus {
+  PENDING
+  ACCEPTED
 }
 
 model ChatProvider {

@@ -2,49 +2,44 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  ParseUUIDPipe,
   Post,
-  Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
 import { ChatService } from './chat.service';
 import { CreateMessageDto } from './dto/create-message.dto';
-
-type SupabaseAuthenticatedRequest = Request & {
-  user?: {
-    id?: string;
-    sub?: string;
-  };
-};
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('chats')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  private getUserId(request: SupabaseAuthenticatedRequest): string {
-    // `sub` is the standard Supabase JWT user identifier.
-    const userId = request.user?.sub ?? request.user?.id;
-
-    if (!userId) {
-      throw new UnauthorizedException('Unauthorized');
-    }
-
-    return userId;
-  }
-
   @Get()
-  getMyChat(@Req() request: SupabaseAuthenticatedRequest) {
-    return this.chatService.getOrCreateChat(this.getUserId(request));
+  getMyChat(@CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.getOrCreateChat(user.id);
   }
 
   @Post('messages')
   sendMessage(
-    @Req() request: SupabaseAuthenticatedRequest,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateMessageDto,
   ) {
-    return this.chatService.sendMessage(this.getUserId(request), dto);
+    return this.chatService.sendMessage(user.id, dto);
+  }
+
+  @Post('messages/:messageId/accept')
+  acceptSchedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptScheduleProposal(
+      user.id,
+      messageId,
+      user.provider,
+    );
   }
 }

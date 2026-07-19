@@ -9,6 +9,9 @@ import { AuthenticatedUser } from '../interfaces/request-with-user.interface';
 interface SupabaseJwtPayload {
   sub: string;
   email: string;
+  app_metadata?: {
+    provider?: string;
+  };
 }
 
 @Injectable()
@@ -33,6 +36,10 @@ export class SupabaseJwtStrategy extends PassportStrategy(
   }
 
   validate(payload: SupabaseJwtPayload): AuthenticatedUser {
-    return { id: payload.sub, email: payload.email };
+    return {
+      id: payload.sub,
+      email: payload.email,
+      provider: payload.app_metadata?.provider ?? 'email',
+    };
   }
 }

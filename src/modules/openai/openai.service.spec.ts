@@ -1,7 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { AppConfig } from '../config/configuration';
+import { AppConfig } from '../../config/configuration';
 import { OpenAiService } from './openai.service';
 
 describe('OpenAiService', () => {

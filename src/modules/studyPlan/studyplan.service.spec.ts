@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import {
   DifficultyLevel,
   FocusPreferences,
@@ -266,5 +267,43 @@ describe('StudyPlanService.deleteFromAi', () => {
     expect(prisma.studyPlan.delete).toHaveBeenCalledWith({
       where: { id: 'study-plan-1' },
     });
+  });
+});
+
+describe('StudyPlanService.findOneByUser', () => {
+  it('returns an owned study plan with its schedules', async () => {
+    const studyPlan = {
+      id: 'study-plan-1',
+      userId: 'user-1',
+      title: 'Math prep',
+      schedules: [{ id: 'schedule-1' }],
+    };
+    const prisma = {
+      studyPlan: {
+        findFirst: jest.fn().mockResolvedValue(studyPlan),
+      },
+    };
+    const service = new StudyPlanService(prisma as never);
+
+    await expect(
+      service.findOneByUser('user-1', 'study-plan-1'),
+    ).resolves.toEqual(studyPlan);
+    expect(prisma.studyPlan.findFirst).toHaveBeenCalledWith({
+      where: { id: 'study-plan-1', userId: 'user-1' },
+      include: { schedules: { orderBy: { startDateTime: 'asc' } } },
+    });
+  });
+
+  it('throws NotFoundException when the study plan does not belong to the user', async () => {
+    const prisma = {
+      studyPlan: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const service = new StudyPlanService(prisma as never);
+
+    await expect(
+      service.findOneByUser('user-1', 'missing'),
+    ).rejects.toThrow(NotFoundException);
   });
 });

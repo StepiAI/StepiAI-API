@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
@@ -21,5 +29,13 @@ export class StudyPlanController {
   @Get()
   findMyStudyPlans(@CurrentUser() user: AuthenticatedUser) {
     return this.studyPlanService.findAllByUser(user.id);
+  }
+
+  @Get(':studyPlanId')
+  findMyStudyPlan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('studyPlanId', ParseUUIDPipe) studyPlanId: string,
+  ) {
+    return this.studyPlanService.findOneByUser(user.id, studyPlanId);
   }
 }

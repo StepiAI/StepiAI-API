@@ -68,6 +68,53 @@ FE cukup tampilkan `parsed.content` sebagai bubble assistant.
 
 Tidak perlu tampilkan tombol accept.
 
+## Get Schedules
+
+List schedule milik user:
+
+```bash
+curl -X GET "http://localhost:3000/api/schedules" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+List dengan filter waktu dan status:
+
+```bash
+curl -X GET "http://localhost:3000/api/schedules?timeMin=2026-07-20T00:00:00.000Z&timeMax=2026-07-31T23:59:59.999Z&status=ACCEPTED" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Query params opsional:
+
+```txt
+timeMin: ISO 8601 datetime
+timeMax: ISO 8601 datetime
+status: PENDING | ACCEPTED
+```
+
+Detail schedule:
+
+```bash
+curl -X GET "http://localhost:3000/api/schedules/SCHEDULE_ID" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+## Get Study Plans
+
+List study plan milik user:
+
+```bash
+curl -X GET "http://localhost:3000/api/study-plans" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Detail study plan, termasuk schedules yang linked ke study plan itu:
+
+```bash
+curl -X GET "http://localhost:3000/api/study-plans/STUDY_PLAN_ID" \
+  -H "Authorization: Bearer TOKEN"
+```
+
 ## Create Normal Schedule
 
 Response:
@@ -316,4 +363,8 @@ POST /api/chats/messages/:messageId/accept-schedule-delete
 POST /api/chats/messages/:messageId/accept-study-plan
 POST /api/chats/messages/:messageId/accept-study-plan-update
 POST /api/chats/messages/:messageId/accept-study-plan-delete
+GET /api/schedules
+GET /api/schedules/:scheduleId
+GET /api/study-plans
+GET /api/study-plans/:studyPlanId
 ```

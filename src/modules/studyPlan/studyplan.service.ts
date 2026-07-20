@@ -872,4 +872,26 @@ export class StudyPlanService {
       },
     });
   }
+
+  async findOneByUser(userId: string, studyPlanId: string) {
+    const studyPlan = await this.prisma.studyPlan.findFirst({
+      where: {
+        id: studyPlanId,
+        userId,
+      },
+      include: {
+        schedules: {
+          orderBy: {
+            startDateTime: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!studyPlan) {
+      throw new NotFoundException('Study plan not found');
+    }
+
+    return studyPlan;
+  }
 }

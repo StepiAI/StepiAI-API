@@ -42,4 +42,52 @@ export class ChatController {
       user.provider,
     );
   }
+
+  @Post('messages/:messageId/accept-schedule-update')
+  async acceptScheduleUpdate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptScheduleUpdateProposal(
+      user.id,
+      messageId,
+      user.provider,
+    );
+  }
+
+  @Post('messages/:messageId/accept-schedule-delete')
+  async acceptScheduleDelete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptScheduleDeleteProposal(
+      user.id,
+      messageId,
+      user.provider,
+    );
+  }
+
+  @Post('messages/:messageId/accept-study-plan')
+  async acceptStudyPlan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptStudyPlanProposal(user.id, messageId);
+  }
+
+  @Post('messages/:messageId/accept-study-plan-update')
+  async acceptStudyPlanUpdate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptStudyPlanUpdateProposal(user.id, messageId);
+  }
+
+  @Post('messages/:messageId/accept-study-plan-delete')
+  async acceptStudyPlanDelete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.acceptStudyPlanDeleteProposal(user.id, messageId);
+  }
 }

@@ -288,6 +288,20 @@ export class StudyPlanService {
     );
   }
 
+  async deleteFromAi(userId: string, studyPlanId: string) {
+    await this.findOwnedStudyPlan(userId, studyPlanId);
+
+    return this.prisma.studyPlan.delete({
+      where: {
+        id: studyPlanId,
+      },
+    });
+  }
+
+  async findForAi(userId: string, studyPlanId: string) {
+    return this.findOwnedStudyPlan(userId, studyPlanId);
+  }
+
   private buildAiScheduleData(userId: string, dto: CreateStudyPlanFromAiDto) {
     this.validateStudyPlanInput(dto);
     this.validateSkippedDates(dto.skippedDates);

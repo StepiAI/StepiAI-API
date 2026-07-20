@@ -129,4 +129,14 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('COMPLETE updated schedule payload');
     expect(instructions).toContain('create or schedule a NEW event');
   });
+
+  it('ngarahin agent buat delete schedule dan study plan lewat proposal delete', () => {
+    const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
+
+    expect(instructions).toContain('schedule_delete_proposal');
+    expect(instructions).toContain('study_plan_delete_proposal');
+    expect(instructions).toContain('"scheduleId": string UUID');
+    expect(instructions).toContain('"studyPlanId": string UUID');
+    expect(instructions).toContain('Do not delete directly');
+  });
 });

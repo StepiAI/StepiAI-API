@@ -42,8 +42,10 @@ assistantMessage.id
 requiresConfirmation
 proposal
 scheduleUpdateProposal
+scheduleDeleteProposal
 studyPlanProposal
 studyPlanUpdateProposal
+studyPlanDeleteProposal
 studyPlanConflict
 isNeedMoreData
 ```
@@ -130,6 +132,36 @@ Saat accept:
 - `status` jadi `ACCEPTED`
 - kalau schedule punya `googleCalendarEventId`, backend coba sync update ke Google Calendar
 
+## Delete Normal Schedule
+
+Response:
+
+```json
+{
+  "parsed": {
+    "type": "schedule_delete_proposal",
+    "scheduleId": "...",
+    "summary": "..."
+  },
+  "requiresConfirmation": true,
+  "scheduleDeleteProposal": {}
+}
+```
+
+FE tampilkan konfirmasi delete dan tombol accept.
+
+Accept:
+
+```bash
+curl -X POST "http://localhost:3000/api/chats/messages/ASSISTANT_MESSAGE_ID/accept-schedule-delete" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Saat accept:
+
+- schedule row dihapus
+- kalau schedule punya `googleCalendarEventId`, backend coba delete event di Google Calendar
+
 ## Create Study Plan
 
 Response:
@@ -189,6 +221,36 @@ Saat accept:
 - schedule lama milik study plan itu dihapus
 - schedule baru dibuat
 - schedule baru langsung `ACCEPTED`
+
+## Delete Study Plan
+
+Response:
+
+```json
+{
+  "parsed": {
+    "type": "study_plan_delete_proposal",
+    "studyPlanId": "...",
+    "title": "..."
+  },
+  "requiresConfirmation": true,
+  "studyPlanDeleteProposal": {}
+}
+```
+
+FE tampilkan konfirmasi delete dan tombol accept.
+
+Accept:
+
+```bash
+curl -X POST "http://localhost:3000/api/chats/messages/ASSISTANT_MESSAGE_ID/accept-study-plan-delete" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+Saat accept:
+
+- study plan dihapus
+- schedule yang linked ke study plan ikut kehapus lewat cascade
 
 ## Study Plan Conflict
 
@@ -250,6 +312,8 @@ Setelah itu agent akan bikin proposal baru. FE baru tampilkan tombol accept kala
 ```txt
 POST /api/chats/messages/:messageId/accept
 POST /api/chats/messages/:messageId/accept-schedule-update
+POST /api/chats/messages/:messageId/accept-schedule-delete
 POST /api/chats/messages/:messageId/accept-study-plan
 POST /api/chats/messages/:messageId/accept-study-plan-update
+POST /api/chats/messages/:messageId/accept-study-plan-delete
 ```

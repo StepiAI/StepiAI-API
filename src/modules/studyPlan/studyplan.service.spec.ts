@@ -244,3 +244,27 @@ describe('StudyPlanService.updateFromAi', () => {
     });
   });
 });
+
+describe('StudyPlanService.deleteFromAi', () => {
+  it('deletes an owned study plan', async () => {
+    const studyPlan = {
+      id: 'study-plan-1',
+      userId: 'user-1',
+      title: 'Math prep',
+    };
+    const prisma = {
+      studyPlan: {
+        findFirst: jest.fn().mockResolvedValue(studyPlan),
+        delete: jest.fn().mockResolvedValue(studyPlan),
+      },
+    };
+    const service = new StudyPlanService(prisma as never);
+
+    await expect(
+      service.deleteFromAi('user-1', 'study-plan-1'),
+    ).resolves.toEqual(studyPlan);
+    expect(prisma.studyPlan.delete).toHaveBeenCalledWith({
+      where: { id: 'study-plan-1' },
+    });
+  });
+});

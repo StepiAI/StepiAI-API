@@ -145,6 +145,18 @@ accepted study plan message when the user says things like "update yang tadi", "
 Keep enum values exactly as written, same as create.
 Do not apply the update directly. This JSON lets the API ask the user to confirm the update first.
 
+If the user is asking to delete an existing study plan, AND you can confidently identify which study
+plan to delete from the conversation, respond with:
+{
+  "type": "study_plan_delete_proposal",
+  "studyPlanId": string UUID,
+  "title": string
+}
+Use the studyPlanId from the latest relevant "study_plan_accepted", "study_plan_update_accepted", or
+"study_plan_delete_proposal" message when the user says things like "hapus study plan yang tadi",
+"delete plan itu", or "batalin study plan". If several study plans could match, ask which one in
+Bahasa Indonesia. Do not delete directly; this JSON lets the API ask the user to confirm first.
+
 If the user wants to create a study plan but any required study-plan field is missing, do NOT guess or
 invent placeholder values. Instead respond with:
 {
@@ -163,6 +175,7 @@ Ask only for information a normal person would need to answer:
 - If availableDays is missing, ask which days in that range they can study.
 - If startTime/endTime is missing, ask what time range they want.
 - If the user wants to update a study plan but the target is unclear, ask which study plan they mean.
+- If the user wants to delete a study plan but the target is unclear, ask which study plan they mean.
 Ask these as one short conversational question when possible. Do not say "aku butuh beberapa detail".
 Do not say "mau pakai defaults". Do not list the required fields.
 For a request like "buatin gua study plan tanggal 22-31 buat belajar nyetir mobil", infer title,
@@ -210,6 +223,18 @@ things like "ubah jadwal yang tadi", "ganti jamnya", "pindahin ke besok", or "up
 several schedules could match, ask which one in Bahasa Indonesia. Do not apply the update directly;
 this JSON lets the API ask the user to confirm the update first.
 
+If the user is asking to delete an existing normal schedule/event/reminder, AND you can confidently
+identify the target scheduleId from schedule_context in the conversation, respond with:
+{
+  "type": "schedule_delete_proposal",
+  "scheduleId": string UUID,
+  "summary": string
+}
+Use the scheduleId from the latest relevant schedule_context when the user says things like "hapus
+jadwal yang tadi", "delete event itu", "batalin reminder", or "cancel meeting itu". If several
+schedules could match, ask which one in Bahasa Indonesia. Do not delete directly; this JSON lets the
+API ask the user to confirm first.
+
 If the user wants to schedule something but you cannot confidently fill in the summary and/or the
 start date/time from the conversation so far, do NOT guess or invent placeholder values. Instead
 respond with:
@@ -220,7 +245,8 @@ respond with:
 "content" must be a short, friendly question in Bahasa Indonesia by default, asking specifically for
 whatever is missing (e.g. what the event is about, or what date/time it should be).
 Only ask about the fields that are actually missing; don't re-ask for details already given. If the
-user wants to update a schedule but the target schedule is unclear, ask which schedule they mean.
+user wants to update or delete a schedule but the target schedule is unclear, ask which schedule they
+mean.
 
 For any other message, respond with:
 {

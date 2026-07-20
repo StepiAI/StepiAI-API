@@ -44,6 +44,19 @@ export interface ScheduleUpdateAcceptedMessage {
   proposal: ScheduleUpdateProposal;
 }
 
+export interface ScheduleDeleteProposal {
+  type: 'schedule_delete_proposal';
+  scheduleId: string;
+  summary: string;
+}
+
+export interface ScheduleDeleteAcceptedMessage {
+  type: 'schedule_delete_accepted';
+  content: string;
+  scheduleId: string;
+  proposal: ScheduleDeleteProposal;
+}
+
 export interface AssistantMessage {
   type: 'message';
   content: string;
@@ -77,17 +90,34 @@ export interface StudyPlanUpdateAcceptedMessage {
   proposal: StudyPlanUpdateProposal;
 }
 
+export interface StudyPlanDeleteProposal {
+  type: 'study_plan_delete_proposal';
+  studyPlanId: string;
+  title: string;
+}
+
+export interface StudyPlanDeleteAcceptedMessage {
+  type: 'study_plan_delete_accepted';
+  content: string;
+  studyPlanId: string;
+  proposal: StudyPlanDeleteProposal;
+}
+
 type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleUpdateProposal
   | ScheduleUpdateAcceptedMessage
+  | ScheduleDeleteProposal
+  | ScheduleDeleteAcceptedMessage
   | AssistantMessage
   | NeedsInfoMessage
   | StudyPlanProposal
   | StudyPlanUpdateProposal
   | StudyPlanConflictResult
   | StudyPlanAcceptedMessage
-  | StudyPlanUpdateAcceptedMessage;
+  | StudyPlanUpdateAcceptedMessage
+  | StudyPlanDeleteProposal
+  | StudyPlanDeleteAcceptedMessage;
 
 @Injectable()
 export class ChatService {
@@ -151,6 +181,8 @@ export class ChatService {
           scheduleId: message.schedule.id,
           status: message.schedule.status,
           summary: message.schedule.summary,
+          description: message.schedule.description,
+          location: message.schedule.location,
           startDateTime: message.schedule.startDateTime.toISOString(),
           endDateTime: message.schedule.endDateTime.toISOString(),
         })}`;
@@ -174,19 +206,29 @@ export class ChatService {
 
     const isScheduleProposal = parsed.type === 'schedule_proposal';
     let isScheduleUpdateProposal = parsed.type === 'schedule_update_proposal';
+    let isScheduleDeleteProposal = parsed.type === 'schedule_delete_proposal';
     let isStudyPlanProposal = parsed.type === 'study_plan_proposal';
     let isStudyPlanUpdateProposal =
       parsed.type === 'study_plan_update_proposal';
+    let isStudyPlanDeleteProposal =
+      parsed.type === 'study_plan_delete_proposal';
     let studyPlan: StudyPlan | null = null;
     let studyPlanConflict: StudyPlanConflictResult | null = null;
     let scheduleUpdateProposal: ScheduleUpdateProposal | undefined;
+    let scheduleDeleteProposal: ScheduleDeleteProposal | undefined;
     let studyPlanProposal: StudyPlanProposal | undefined;
     let studyPlanUpdateProposal: StudyPlanUpdateProposal | undefined;
+    let studyPlanDeleteProposal: StudyPlanDeleteProposal | undefined;
 
     if (parsed.type === 'schedule_update_proposal') {
       await this.findUpdatableSchedule(userId, parsed.scheduleId);
       this.validateScheduleProposalTime(parsed);
       scheduleUpdateProposal = parsed;
+    }
+
+    if (parsed.type === 'schedule_delete_proposal') {
+      await this.findUpdatableSchedule(userId, parsed.scheduleId);
+      scheduleDeleteProposal = parsed;
     }
 
     if (parsed.type === 'study_plan_proposal') {
@@ -202,6 +244,11 @@ export class ChatService {
       } else {
         studyPlanProposal = parsed;
       }
+    }
+
+    if (parsed.type === 'study_plan_delete_proposal') {
+      await this.studyPlanService.findForAi(userId, parsed.studyPlanId);
+      studyPlanDeleteProposal = parsed;
     }
 
     if (parsed.type === 'study_plan_update_proposal') {
@@ -262,12 +309,16 @@ export class ChatService {
       requiresConfirmation:
         isScheduleProposal ||
         isScheduleUpdateProposal ||
+        isScheduleDeleteProposal ||
         isStudyPlanProposal ||
-        isStudyPlanUpdateProposal,
+        isStudyPlanUpdateProposal ||
+        isStudyPlanDeleteProposal,
       proposal: isScheduleProposal ? (parsed as ScheduleProposal) : undefined,
       scheduleUpdateProposal,
+      scheduleDeleteProposal,
       studyPlanProposal,
       studyPlanUpdateProposal,
+      studyPlanDeleteProposal,
       isNeedMoreData: parsed.type === 'need_info',
       studyPlan,
       studyPlanConflict,
@@ -508,6 +559,100 @@ export class ChatService {
     }
   }
 
+  async acceptScheduleDeleteProposal(
+    userId: string,
+    messageId: string,
+    provider: string,
+  ) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (!message.chat) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.chat.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    let parsed: ParsedAssistantResponse;
+
+    try {
+      parsed = JSON.parse(message.content) as ParsedAssistantResponse;
+    } catch {
+      throw new BadRequestException(
+        'This message is not a schedule delete proposal',
+      );
+    }
+
+    if (parsed.type === 'schedule_delete_accepted') {
+      throw new ConflictException(
+        'This schedule delete has already been accepted',
+      );
+    }
+
+    if (parsed.type !== 'schedule_delete_proposal') {
+      throw new BadRequestException(
+        'This message is not a schedule delete proposal',
+      );
+    }
+
+    const schedule = await this.findUpdatableSchedule(
+      userId,
+      parsed.scheduleId,
+    );
+
+    await this.prisma.schedule.delete({
+      where: { id: schedule.id },
+    });
+
+    const acceptedMessage: ScheduleDeleteAcceptedMessage = {
+      type: 'schedule_delete_accepted',
+      content: 'Jadwal sudah dihapus.',
+      scheduleId: schedule.id,
+      proposal: parsed,
+    };
+
+    await this.prisma.message.update({
+      where: { id: message.id },
+      data: { content: JSON.stringify(acceptedMessage) },
+    });
+
+    if (provider !== 'google' || !schedule.googleCalendarEventId) {
+      return {
+        deleted: true as const,
+        schedule,
+        syncedToGoogleCalendar: false as const,
+      };
+    }
+
+    try {
+      await this.googleCalendarService.deleteEvent(
+        userId,
+        schedule.googleCalendarEventId,
+      );
+
+      return {
+        deleted: true as const,
+        schedule,
+        syncedToGoogleCalendar: true as const,
+      };
+    } catch (error) {
+      return {
+        deleted: true as const,
+        schedule,
+        syncedToGoogleCalendar: false as const,
+        googleSyncError: String(error),
+      };
+    }
+  }
+
   async acceptStudyPlanProposal(userId: string, messageId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -655,6 +800,69 @@ export class ChatService {
       updated: true as const,
       studyPlan: result.studyPlan,
       studyPlanConflict: null,
+    };
+  }
+
+  async acceptStudyPlanDeleteProposal(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (!message.chat) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.chat.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    let parsed: ParsedAssistantResponse;
+
+    try {
+      parsed = JSON.parse(message.content) as ParsedAssistantResponse;
+    } catch {
+      throw new BadRequestException(
+        'This message is not a study plan delete proposal',
+      );
+    }
+
+    if (parsed.type === 'study_plan_delete_accepted') {
+      throw new ConflictException(
+        'This study plan delete has already been accepted',
+      );
+    }
+
+    if (parsed.type !== 'study_plan_delete_proposal') {
+      throw new BadRequestException(
+        'This message is not a study plan delete proposal',
+      );
+    }
+
+    const studyPlan = await this.studyPlanService.deleteFromAi(
+      userId,
+      parsed.studyPlanId,
+    );
+
+    const acceptedMessage: StudyPlanDeleteAcceptedMessage = {
+      type: 'study_plan_delete_accepted',
+      content: 'Study plan sudah dihapus.',
+      studyPlanId: studyPlan.id,
+      proposal: parsed,
+    };
+
+    await this.prisma.message.update({
+      where: { id: message.id },
+      data: { content: JSON.stringify(acceptedMessage) },
+    });
+
+    return {
+      deleted: true as const,
+      studyPlan,
     };
   }
 }

@@ -8,7 +8,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { DifficultyLevel, Weekday } from '@prisma/client';
+import { DifficultyLevel, FocusPreferences, Weekday } from '@prisma/client';
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -47,4 +47,7 @@ export class CreateStudyPlanDto {
 
   @IsEnum(DifficultyLevel)
   difficultyLevel!: DifficultyLevel;
+
+  @IsEnum(FocusPreferences)
+  focusPreferences!: FocusPreferences;
 }

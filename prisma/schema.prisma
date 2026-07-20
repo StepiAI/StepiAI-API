@@ -61,6 +61,7 @@ model Schedule {
   id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId                String         @map("user_id") @db.Uuid
   messageId             String?        @unique @map("message_id") @db.Uuid
+  studyPlanId           String?        @map("study_plan_id") @db.Uuid
   summary               String
   description           String?
   location              String?
@@ -71,7 +72,9 @@ model Schedule {
   updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   status                ScheduleStatus @default(PENDING)
   message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
+  studyPlan             StudyPlan?     @relation(fields: [studyPlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([studyPlanId], map: "idx_schedules_study_plan_id")
   @@index([userId], map: "idx_schedules_user_id")
   @@map("schedules")
 }
@@ -102,6 +105,7 @@ model StudyPlan {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   focusPreferences FocusPreferences @map("focus_preferences")
+  schedules        Schedule[]
 
   @@index([userId], map: "idx_study_plans_user_id")
   @@map("study_plans")

@@ -47,8 +47,8 @@ model Message {
   chatId             String    @map("chat_id") @db.Uuid
   role               String
   content            String
-  isScheduleProposal Boolean   @default(false) @map("is_schedule_proposal")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  isScheduleProposal Boolean   @default(false) @map("is_schedule_proposal")
   chat               Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   schedule           Schedule?
 
@@ -66,19 +66,17 @@ model Schedule {
   location              String?
   startDateTime         DateTime       @map("start_date_time") @db.Timestamptz(6)
   endDateTime           DateTime       @map("end_date_time") @db.Timestamptz(6)
-  status                ScheduleStatus @default(PENDING)
   googleCalendarEventId String?        @map("google_calendar_event_id")
   createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  message               Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  status                ScheduleStatus @default(PENDING)
+  study_plan_id         String?        @db.Uuid
+  message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
+  study_plans           study_plans?   @relation(fields: [study_plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId], map: "idx_schedules_user_id")
+  @@index([study_plan_id], map: "idx_schedules_study_plan_id")
   @@map("schedules")
-}
-
-enum ScheduleStatus {
-  PENDING
-  ACCEPTED
 }
 
 model ChatProvider {
@@ -90,4 +88,61 @@ model ChatProvider {
   chat                   Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("chat_providers")
+}
+
+model study_plans {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String           @db.Uuid
+  title             String
+  goal              String
+  topics            String[]
+  start_date        DateTime         @db.Date
+  end_date          DateTime         @db.Date
+  available_days    Weekday[]
+  start_time        String
+  end_time          String
+  difficulty_level  DifficultyLevel
+  created_at        DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime         @default(now()) @db.Timestamptz(6)
+  focus_preferences FocusPreferences
+  schedules         Schedule[]
+
+  @@index([user_id], map: "idx_study_plans_user_id")
+}
+
+enum ScheduleStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum FocusPreferences {
+  DEEP_FOCUS
+  BALANCED
+  PODOMORO
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model DeviceToken {
+  id        Int     @id @default(autoincrement())
+  userId    String  @db.Uuid
+  token     String  @unique
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @updatedAt
+
+  @@index([userId])
 }

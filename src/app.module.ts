@@ -10,6 +10,8 @@ import { ExampleModule } from './modules/example/example.module';
 import { OpenAiModule } from './modules/openai/openai.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { FirebaseModule } from './firebase/firebase.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { ChatModule } from './modules/chat/chat.module';
     OpenAiModule,
     GoogleCalendarModule,
     ChatModule,
+    NotificationsModule,
+    FirebaseModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -9,7 +9,7 @@ import { AuthModule } from './common/auth.module';
 import { OpenAiModule } from './modules/openai/openai.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { StudyPlanModule } from './modules/studyPlan/studyplan.module';
+import { LifePlanModule } from './modules/lifePlan/lifeplan.module';
 import { WeatherModule } from './modules/weather/weather.module';
 
 @Module({
@@ -21,8 +21,8 @@ import { WeatherModule } from './modules/weather/weather.module';
     OpenAiModule,
     GoogleCalendarModule,
     ChatModule,
-    StudyPlanModule,
-    ScheduleModule,
+    LifePlanModule,
+    WeatherModule,
   ],
   controllers: [AppController],
   providers: [AppService],

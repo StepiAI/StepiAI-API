@@ -209,9 +209,10 @@ export class GoogleCalendarService {
           summary: input.summary,
           location: input.location,
           description: input.description,
-          // dateTime udah bawa offset dari client, jadi gak perlu kirim timeZone
-          start: { dateTime: start.toISOString() },
-          end: { dateTime: end.toISOString() },
+          start: { dateTime: start.toISOString(), timeZone: input.timeZone },
+          end: { dateTime: end.toISOString(), timeZone: input.timeZone },
+          // undefined = event sekali jalan; Google nolak array kosong
+          recurrence: input.recurrence?.length ? input.recurrence : undefined,
         },
       });
       return data;

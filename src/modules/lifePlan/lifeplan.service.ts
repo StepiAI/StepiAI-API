@@ -3,9 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Schedule, ScheduleStatus, StudyPlan, Weekday } from '@prisma/client';
+import { Schedule, ScheduleStatus, LifePlan, Weekday } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateStudyPlanDto } from './dto/create-studyplan.dto';
+import { CreateLifePlanDto } from './dto/create-lifeplan.dto';
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const SAME_DAY_SEARCH_START_HOUR = 6;
@@ -65,7 +65,7 @@ function isOverlapping(
   return startA.getTime() < endB.getTime() && endA.getTime() > startB.getTime();
 }
 
-export interface StudyPlanScheduleData {
+export interface LifePlanScheduleData {
   userId: string;
   summary: string;
   description: string;
@@ -74,18 +74,18 @@ export interface StudyPlanScheduleData {
   endDateTime: Date;
 }
 
-export interface StudyPlanScheduleOverride {
+export interface LifePlanScheduleOverride {
   date: string;
   startTime: string;
   endTime: string;
 }
 
-export type CreateStudyPlanFromAiDto = CreateStudyPlanDto & {
-  scheduleOverrides?: StudyPlanScheduleOverride[];
+export type CreateLifePlanFromAiDto = CreateLifePlanDto & {
+  scheduleOverrides?: LifePlanScheduleOverride[];
   skippedDates?: string[];
 };
 
-export interface StudyPlanConflict {
+export interface LifePlanConflict {
   date: string;
   proposedStartDateTime: string;
   proposedEndDateTime: string;
@@ -97,45 +97,45 @@ export interface StudyPlanConflict {
   }>;
 }
 
-export interface StudyPlanConflictResolutionOption {
+export interface LifePlanConflictResolutionOption {
   type: 'skip_day_and_extend' | 'change_time_for_day';
   content: string;
   updatedEndDate?: string;
   skippedDates?: string[];
   replacementDates?: string[];
-  scheduleOverrides?: StudyPlanScheduleOverride[];
+  scheduleOverrides?: LifePlanScheduleOverride[];
 }
 
-export interface StudyPlanConflictResult {
-  type: 'study_plan_conflict';
+export interface LifePlanConflictResult {
+  type: 'life_plan_conflict';
   content: string;
-  conflicts: StudyPlanConflict[];
-  options: StudyPlanConflictResolutionOption[];
+  conflicts: LifePlanConflict[];
+  options: LifePlanConflictResolutionOption[];
 }
 
-export type CreateStudyPlanFromAiResult =
+export type CreateLifePlanFromAiResult =
   | {
       created: true;
-      studyPlan: StudyPlan;
+      lifePlan: LifePlan;
     }
   | {
       created: false;
-      conflict: StudyPlanConflictResult;
+      conflict: LifePlanConflictResult;
     };
 
-export type UpdateStudyPlanFromAiResult =
+export type UpdateLifePlanFromAiResult =
   | {
       updated: true;
-      studyPlan: StudyPlan;
+      lifePlan: LifePlan;
     }
   | {
       updated: false;
-      conflict: StudyPlanConflictResult;
+      conflict: LifePlanConflictResult;
     };
 
-export function buildStudyPlanScheduleData(
+export function buildLifePlanScheduleData(
   dto: Pick<
-    CreateStudyPlanDto,
+    CreateLifePlanDto,
     | 'title'
     | 'goal'
     | 'startDate'
@@ -149,7 +149,7 @@ export function buildStudyPlanScheduleData(
   const startDate = parseDateOnly(dto.startDate);
   const endDate = parseDateOnly(dto.endDate);
 
-  const schedules: StudyPlanScheduleData[] = [];
+  const schedules: LifePlanScheduleData[] = [];
 
   const currentDate = new Date(startDate);
 
@@ -176,13 +176,13 @@ export function buildStudyPlanScheduleData(
 }
 
 @Injectable()
-export class StudyPlanService {
+export class LifePlanService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, dto: CreateStudyPlanDto) {
-    this.validateStudyPlanInput(dto);
+  async create(userId: string, dto: CreateLifePlanDto) {
+    this.validateLifePlanInput(dto);
 
-    const scheduleData = buildStudyPlanScheduleData(
+    const scheduleData = buildLifePlanScheduleData(
       {
         userId,
         title: dto.title,
@@ -201,8 +201,8 @@ export class StudyPlanService {
 
   async createFromAi(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
-  ): Promise<CreateStudyPlanFromAiResult> {
+    dto: CreateLifePlanFromAiDto,
+  ): Promise<CreateLifePlanFromAiResult> {
     const scheduleData = this.buildAiScheduleData(userId, dto);
     const conflict = await this.checkAiScheduleConflicts(
       userId,
@@ -219,7 +219,7 @@ export class StudyPlanService {
 
     return {
       created: true,
-      studyPlan: await this.createWithSchedules(
+      lifePlan: await this.createWithSchedules(
         userId,
         dto,
         scheduleData,
@@ -230,8 +230,8 @@ export class StudyPlanService {
 
   async previewFromAi(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
-  ): Promise<StudyPlanConflictResult | null> {
+    dto: CreateLifePlanFromAiDto,
+  ): Promise<LifePlanConflictResult | null> {
     const scheduleData = this.buildAiScheduleData(userId, dto);
 
     return this.checkAiScheduleConflicts(userId, dto, scheduleData);
@@ -239,17 +239,17 @@ export class StudyPlanService {
 
   async updateFromAi(
     userId: string,
-    studyPlanId: string,
-    dto: CreateStudyPlanFromAiDto,
-  ): Promise<UpdateStudyPlanFromAiResult> {
-    await this.findOwnedStudyPlan(userId, studyPlanId);
+    lifePlanId: string,
+    dto: CreateLifePlanFromAiDto,
+  ): Promise<UpdateLifePlanFromAiResult> {
+    await this.findOwnedLifePlan(userId, lifePlanId);
 
     const scheduleData = this.buildAiScheduleData(userId, dto);
     const conflict = await this.checkAiScheduleConflicts(
       userId,
       dto,
       scheduleData,
-      studyPlanId,
+      lifePlanId,
     );
 
     if (conflict) {
@@ -261,9 +261,9 @@ export class StudyPlanService {
 
     return {
       updated: true,
-      studyPlan: await this.updateWithSchedules(
+      lifePlan: await this.updateWithSchedules(
         userId,
-        studyPlanId,
+        lifePlanId,
         dto,
         scheduleData,
         ScheduleStatus.ACCEPTED,
@@ -273,10 +273,10 @@ export class StudyPlanService {
 
   async previewUpdateFromAi(
     userId: string,
-    studyPlanId: string,
-    dto: CreateStudyPlanFromAiDto,
-  ): Promise<StudyPlanConflictResult | null> {
-    await this.findOwnedStudyPlan(userId, studyPlanId);
+    lifePlanId: string,
+    dto: CreateLifePlanFromAiDto,
+  ): Promise<LifePlanConflictResult | null> {
+    await this.findOwnedLifePlan(userId, lifePlanId);
 
     const scheduleData = this.buildAiScheduleData(userId, dto);
 
@@ -284,30 +284,30 @@ export class StudyPlanService {
       userId,
       dto,
       scheduleData,
-      studyPlanId,
+      lifePlanId,
     );
   }
 
-  async deleteFromAi(userId: string, studyPlanId: string) {
-    await this.findOwnedStudyPlan(userId, studyPlanId);
+  async deleteFromAi(userId: string, lifePlanId: string) {
+    await this.findOwnedLifePlan(userId, lifePlanId);
 
-    return this.prisma.studyPlan.delete({
+    return this.prisma.lifePlan.delete({
       where: {
-        id: studyPlanId,
+        id: lifePlanId,
       },
     });
   }
 
-  async findForAi(userId: string, studyPlanId: string) {
-    return this.findOwnedStudyPlan(userId, studyPlanId);
+  async findForAi(userId: string, lifePlanId: string) {
+    return this.findOwnedLifePlan(userId, lifePlanId);
   }
 
-  private buildAiScheduleData(userId: string, dto: CreateStudyPlanFromAiDto) {
-    this.validateStudyPlanInput(dto);
+  private buildAiScheduleData(userId: string, dto: CreateLifePlanFromAiDto) {
+    this.validateLifePlanInput(dto);
     this.validateSkippedDates(dto.skippedDates);
     this.validateScheduleOverrides(dto.scheduleOverrides);
 
-    let scheduleData = buildStudyPlanScheduleData(
+    let scheduleData = buildLifePlanScheduleData(
       {
         userId,
         title: dto.title,
@@ -333,14 +333,14 @@ export class StudyPlanService {
 
   private async checkAiScheduleConflicts(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
-    scheduleData: StudyPlanScheduleData[],
-    ignoredStudyPlanId?: string,
+    dto: CreateLifePlanFromAiDto,
+    scheduleData: LifePlanScheduleData[],
+    ignoredLifePlanId?: string,
   ) {
     const conflicts = await this.findScheduleConflicts(
       userId,
       scheduleData,
-      ignoredStudyPlanId,
+      ignoredLifePlanId,
     );
 
     if (conflicts.length > 0) {
@@ -348,29 +348,29 @@ export class StudyPlanService {
         userId,
         dto,
         conflicts,
-        ignoredStudyPlanId,
+        ignoredLifePlanId,
       );
     }
 
     return null;
   }
 
-  private async findOwnedStudyPlan(userId: string, studyPlanId: string) {
-    const studyPlan = await this.prisma.studyPlan.findFirst({
+  private async findOwnedLifePlan(userId: string, lifePlanId: string) {
+    const lifePlan = await this.prisma.lifePlan.findFirst({
       where: {
-        id: studyPlanId,
+        id: lifePlanId,
         userId,
       },
     });
 
-    if (!studyPlan) {
-      throw new NotFoundException('Study plan not found');
+    if (!lifePlan) {
+      throw new NotFoundException('Life plan not found');
     }
 
-    return studyPlan;
+    return lifePlan;
   }
 
-  private validateStudyPlanInput(dto: CreateStudyPlanDto) {
+  private validateLifePlanInput(dto: CreateLifePlanDto) {
     const startDate = parseDateOnly(dto.startDate);
 
     const endDate = parseDateOnly(dto.endDate);
@@ -384,7 +384,7 @@ export class StudyPlanService {
     }
   }
 
-  private validateScheduleOverrides(overrides?: StudyPlanScheduleOverride[]) {
+  private validateScheduleOverrides(overrides?: LifePlanScheduleOverride[]) {
     if (!overrides) return;
 
     for (const override of overrides) {
@@ -422,15 +422,15 @@ export class StudyPlanService {
 
   private createWithSchedules(
     userId: string,
-    dto: CreateStudyPlanDto,
-    scheduleData: StudyPlanScheduleData[],
+    dto: CreateLifePlanDto,
+    scheduleData: LifePlanScheduleData[],
     scheduleStatus?: ScheduleStatus,
   ) {
     const startDate = parseDateOnly(dto.startDate);
     const endDate = parseDateOnly(dto.endDate);
 
     return this.prisma.$transaction(async (tx) => {
-      const studyPlan = await tx.studyPlan.create({
+      const lifePlan = await tx.lifePlan.create({
         data: {
           userId,
           title: dto.title,
@@ -457,34 +457,34 @@ export class StudyPlanService {
           data: scheduleStatus
             ? scheduleData.map((schedule) => ({
                 ...schedule,
-                studyPlanId: studyPlan.id,
+                lifePlanId: lifePlan.id,
                 status: scheduleStatus,
               }))
             : scheduleData.map((schedule) => ({
                 ...schedule,
-                studyPlanId: studyPlan.id,
+                lifePlanId: lifePlan.id,
               })),
         });
       }
 
-      return studyPlan;
+      return lifePlan;
     });
   }
 
   private updateWithSchedules(
     userId: string,
-    studyPlanId: string,
-    dto: CreateStudyPlanDto,
-    scheduleData: StudyPlanScheduleData[],
+    lifePlanId: string,
+    dto: CreateLifePlanDto,
+    scheduleData: LifePlanScheduleData[],
     scheduleStatus: ScheduleStatus,
   ) {
     const startDate = parseDateOnly(dto.startDate);
     const endDate = parseDateOnly(dto.endDate);
 
     return this.prisma.$transaction(async (tx) => {
-      const studyPlan = await tx.studyPlan.update({
+      const lifePlan = await tx.lifePlan.update({
         where: {
-          id: studyPlanId,
+          id: lifePlanId,
         },
         data: {
           title: dto.title,
@@ -503,7 +503,7 @@ export class StudyPlanService {
       await tx.schedule.deleteMany({
         where: {
           userId,
-          studyPlanId,
+          lifePlanId,
         },
       });
 
@@ -511,19 +511,19 @@ export class StudyPlanService {
         await tx.schedule.createMany({
           data: scheduleData.map((schedule) => ({
             ...schedule,
-            studyPlanId,
+            lifePlanId,
             status: scheduleStatus,
           })),
         });
       }
 
-      return studyPlan;
+      return lifePlan;
     });
   }
 
   private applyScheduleOverrides(
-    scheduleData: StudyPlanScheduleData[],
-    overrides?: StudyPlanScheduleOverride[],
+    scheduleData: LifePlanScheduleData[],
+    overrides?: LifePlanScheduleOverride[],
   ) {
     if (!overrides?.length) return scheduleData;
 
@@ -546,7 +546,7 @@ export class StudyPlanService {
   }
 
   private filterSkippedDates(
-    scheduleData: StudyPlanScheduleData[],
+    scheduleData: LifePlanScheduleData[],
     skippedDates?: string[],
   ) {
     if (!skippedDates?.length) return scheduleData;
@@ -560,9 +560,9 @@ export class StudyPlanService {
 
   private async findScheduleConflicts(
     userId: string,
-    scheduleData: StudyPlanScheduleData[],
-    ignoredStudyPlanId?: string,
-  ): Promise<StudyPlanConflict[]> {
+    scheduleData: LifePlanScheduleData[],
+    ignoredLifePlanId?: string,
+  ): Promise<LifePlanConflict[]> {
     if (scheduleData.length === 0) return [];
 
     const minStartTime = Math.min(
@@ -577,11 +577,11 @@ export class StudyPlanService {
         userId,
         startDateTime: { lt: new Date(maxEndTime) },
         endDateTime: { gt: new Date(minStartTime) },
-        ...(ignoredStudyPlanId
+        ...(ignoredLifePlanId
           ? {
               OR: [
-                { studyPlanId: null },
-                { studyPlanId: { not: ignoredStudyPlanId } },
+                { lifePlanId: null },
+                { lifePlanId: { not: ignoredLifePlanId } },
               ],
             }
           : {}),
@@ -617,24 +617,24 @@ export class StudyPlanService {
 
   private async buildAiConflictResult(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
-    conflicts: StudyPlanConflict[],
-    ignoredStudyPlanId?: string,
-  ): Promise<StudyPlanConflictResult> {
+    dto: CreateLifePlanFromAiDto,
+    conflicts: LifePlanConflict[],
+    ignoredLifePlanId?: string,
+  ): Promise<LifePlanConflictResult> {
     const skipOption = await this.buildSkipDayAndExtendOption(
       userId,
       dto,
       conflicts,
-      ignoredStudyPlanId,
+      ignoredLifePlanId,
     );
     const changeTimeOption = await this.buildChangeTimeForDayOption(
       userId,
       conflicts,
-      ignoredStudyPlanId,
+      ignoredLifePlanId,
     );
 
     return {
-      type: 'study_plan_conflict',
+      type: 'life_plan_conflict',
       content:
         'Ada beberapa sesi belajar yang bentrok sama jadwal kamu. Kamu bisa pilih: skip hari yang bentrok lalu durasinya diperpanjang, atau ubah jam khusus di hari itu aja.',
       conflicts,
@@ -644,15 +644,15 @@ export class StudyPlanService {
 
   private async buildSkipDayAndExtendOption(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
-    conflicts: StudyPlanConflict[],
-    ignoredStudyPlanId?: string,
-  ): Promise<StudyPlanConflictResolutionOption> {
+    dto: CreateLifePlanFromAiDto,
+    conflicts: LifePlanConflict[],
+    ignoredLifePlanId?: string,
+  ): Promise<LifePlanConflictResolutionOption> {
     const extension = await this.findReplacementStudyDates(
       userId,
       dto,
       conflicts.length,
-      ignoredStudyPlanId,
+      ignoredLifePlanId,
     );
     const skippedDates = [
       ...conflicts.map((conflict) => conflict.date),
@@ -663,7 +663,7 @@ export class StudyPlanService {
       type: 'skip_day_and_extend',
       content: `Skip tanggal ${skippedDates.join(
         ', ',
-      )}, lalu study plan diperpanjang sampai ${
+      )}, lalu life plan diperpanjang sampai ${
         extension.replacementDates.at(-1) ?? dto.endDate
       }.`,
       updatedEndDate: extension.replacementDates.at(-1) ?? dto.endDate,
@@ -674,9 +674,9 @@ export class StudyPlanService {
 
   private async findReplacementStudyDates(
     userId: string,
-    dto: CreateStudyPlanFromAiDto,
+    dto: CreateLifePlanFromAiDto,
     neededCount: number,
-    ignoredStudyPlanId?: string,
+    ignoredLifePlanId?: string,
   ): Promise<{ replacementDates: string[]; skippedDates: string[] }> {
     const replacementDates: string[] = [];
     const skippedDates: string[] = [];
@@ -697,7 +697,7 @@ export class StudyPlanService {
             date,
             dto.startTime,
             dto.endTime,
-            ignoredStudyPlanId,
+            ignoredLifePlanId,
           )
         ) {
           skippedDates.push(date);
@@ -717,7 +717,7 @@ export class StudyPlanService {
     date: string,
     startTime: string,
     endTime: string,
-    ignoredStudyPlanId?: string,
+    ignoredLifePlanId?: string,
   ): Promise<boolean> {
     const startDateTime = toUtcDateTime(date, startTime);
     const endDateTime = toUtcDateTime(date, endTime);
@@ -727,11 +727,11 @@ export class StudyPlanService {
         userId,
         startDateTime: { lt: endDateTime },
         endDateTime: { gt: startDateTime },
-        ...(ignoredStudyPlanId
+        ...(ignoredLifePlanId
           ? {
               OR: [
-                { studyPlanId: null },
-                { studyPlanId: { not: ignoredStudyPlanId } },
+                { lifePlanId: null },
+                { lifePlanId: { not: ignoredLifePlanId } },
               ],
             }
           : {}),
@@ -743,16 +743,16 @@ export class StudyPlanService {
 
   private async buildChangeTimeForDayOption(
     userId: string,
-    conflicts: StudyPlanConflict[],
-    ignoredStudyPlanId?: string,
-  ): Promise<StudyPlanConflictResolutionOption> {
+    conflicts: LifePlanConflict[],
+    ignoredLifePlanId?: string,
+  ): Promise<LifePlanConflictResolutionOption> {
     const scheduleOverrides = (
       await Promise.all(
         conflicts.map(async (conflict) =>
-          this.findSameDayAlternative(userId, conflict, ignoredStudyPlanId),
+          this.findSameDayAlternative(userId, conflict, ignoredLifePlanId),
         ),
       )
-    ).filter((override): override is StudyPlanScheduleOverride =>
+    ).filter((override): override is LifePlanScheduleOverride =>
       Boolean(override),
     );
 
@@ -768,9 +768,9 @@ export class StudyPlanService {
 
   private async findSameDayAlternative(
     userId: string,
-    conflict: StudyPlanConflict,
-    ignoredStudyPlanId?: string,
-  ): Promise<StudyPlanScheduleOverride | null> {
+    conflict: LifePlanConflict,
+    ignoredLifePlanId?: string,
+  ): Promise<LifePlanScheduleOverride | null> {
     const proposedStart = new Date(conflict.proposedStartDateTime);
     const proposedEnd = new Date(conflict.proposedEndDateTime);
     const durationMs = proposedEnd.getTime() - proposedStart.getTime();
@@ -797,11 +797,11 @@ export class StudyPlanService {
         userId,
         startDateTime: { lt: searchEnd },
         endDateTime: { gt: searchStart },
-        ...(ignoredStudyPlanId
+        ...(ignoredLifePlanId
           ? {
               OR: [
-                { studyPlanId: null },
-                { studyPlanId: { not: ignoredStudyPlanId } },
+                { lifePlanId: null },
+                { lifePlanId: { not: ignoredLifePlanId } },
               ],
             }
           : {}),
@@ -863,7 +863,7 @@ export class StudyPlanService {
   }
 
   async findAllByUser(userId: string) {
-    return this.prisma.studyPlan.findMany({
+    return this.prisma.lifePlan.findMany({
       where: {
         userId,
       },
@@ -873,10 +873,10 @@ export class StudyPlanService {
     });
   }
 
-  async findOneByUser(userId: string, studyPlanId: string) {
-    const studyPlan = await this.prisma.studyPlan.findFirst({
+  async findOneByUser(userId: string, lifePlanId: string) {
+    const lifePlan = await this.prisma.lifePlan.findFirst({
       where: {
-        id: studyPlanId,
+        id: lifePlanId,
         userId,
       },
       include: {
@@ -888,10 +888,10 @@ export class StudyPlanService {
       },
     });
 
-    if (!studyPlan) {
-      throw new NotFoundException('Study plan not found');
+    if (!lifePlan) {
+      throw new NotFoundException('Life plan not found');
     }
 
-    return studyPlan;
+    return lifePlan;
   }
 }

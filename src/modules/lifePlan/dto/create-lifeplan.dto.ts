@@ -12,7 +12,7 @@ import { DifficultyLevel, FocusPreferences, Weekday } from '@prisma/client';
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-export class CreateStudyPlanDto {
+export class CreateLifePlanDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)

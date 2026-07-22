@@ -61,7 +61,6 @@ model Schedule {
   id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId                String         @map("user_id") @db.Uuid
   messageId             String?        @unique @map("message_id") @db.Uuid
-  studyPlanId           String?        @map("study_plan_id") @db.Uuid
   summary               String
   description           String?
   location              String?
@@ -71,10 +70,11 @@ model Schedule {
   createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   status                ScheduleStatus @default(PENDING)
+  lifePlanId            String?        @map("life_plan_id") @db.Uuid
+  lifePlan              LifePlan?      @relation(fields: [lifePlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
-  studyPlan             StudyPlan?     @relation(fields: [studyPlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([studyPlanId], map: "idx_schedules_study_plan_id")
+  @@index([lifePlanId], map: "idx_schedules_life_plan_id")
   @@index([userId], map: "idx_schedules_user_id")
   @@map("schedules")
 }
@@ -90,8 +90,8 @@ model ChatProvider {
   @@map("chat_providers")
 }
 
-model StudyPlan {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+model LifePlan {
+  id               String           @id(map: "study_plans_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId           String           @map("user_id") @db.Uuid
   title            String
   goal             String
@@ -107,12 +107,20 @@ model StudyPlan {
   focusPreferences FocusPreferences @map("focus_preferences")
   schedules        Schedule[]
 
-  @@index([userId], map: "idx_study_plans_user_id")
-  @@map("study_plans")
+  @@index([userId], map: "idx_life_plans_user_id")
+  @@map("life_plans")
 }
 
-// hasil geocoding di-cache biar 1 lokasi gak di-resolve berulang tiap cek cuaca.
-// PK-nya query yg udah dinormalisasi (lowercase + trim), bukan teks aslinya.
+model DeviceToken {
+  id        Int      @id @default(autoincrement())
+  userId    String   @db.Uuid
+  token     String   @unique
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @default(now())
+
+  @@index([userId])
+}
+
 model GeocodeCache {
   query     String   @id
   latitude  Float

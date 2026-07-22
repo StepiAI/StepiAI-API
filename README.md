@@ -100,7 +100,10 @@ Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
 
 ## API behavior notes
 
+- [StepiAI chat API](docs/AI_CHAT_API.md)
+- [AI chat schedule and study-plan creation flow](docs/AI_CHAT_CREATION_FLOW.md)
 - [StepiAI chat behavior and frontend compatibility](docs/AI_CHAT_BEHAVIOR.md)
+- [StepiAI voice agent API](docs/AI_VOICE_AGENT_API.md)
 - [React Native voice agent example](examples/react-native-voice-agent/README.md)
 
 ## OpenAI integration

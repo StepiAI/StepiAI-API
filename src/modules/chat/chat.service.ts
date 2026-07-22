@@ -33,6 +33,7 @@ import {
   type TimeRange,
 } from './schedule-safety';
 import { buildVoiceAgentResponse } from './voice-response';
+import { Console } from 'console';
 
 export { isAffirmativeReply } from './schedule-safety';
 
@@ -1408,6 +1409,8 @@ export class ChatService {
         'Perubahan ini sekarang bentrok dengan jadwal lain. Kirim pilihanmu lewat chat dulu.',
       );
     }
+
+    console.log(`AMAN SAMPAI SINI`);
 
     const schedule = await this.prisma.schedule.update({
       where: { id: parsed.scheduleId },

@@ -15,7 +15,7 @@ export class LifePlanController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateLifePlanDto,
   ) {
-    return this.lifePlanService.create(user.id, dto);
+    return this.lifePlanService.createFromAi(user.id, dto);
   }
 
   @Get()

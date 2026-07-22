@@ -179,26 +179,6 @@ export function buildLifePlanScheduleData(
 export class LifePlanService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, dto: CreateLifePlanDto) {
-    this.validateLifePlanInput(dto);
-
-    const scheduleData = buildLifePlanScheduleData(
-      {
-        userId,
-        title: dto.title,
-        goal: dto.goal,
-        startDate: dto.startDate,
-        endDate: dto.endDate,
-        availableDays: dto.availableDays,
-        startTime: dto.startTime,
-        endTime: dto.endTime,
-      },
-      userId,
-    );
-
-    return this.createWithSchedules(userId, dto, scheduleData);
-  }
-
   async createFromAi(
     userId: string,
     dto: CreateLifePlanFromAiDto,

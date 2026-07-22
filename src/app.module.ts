@@ -11,6 +11,9 @@ import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.
 import { ChatModule } from './modules/chat/chat.module';
 import { LifePlanModule } from './modules/lifePlan/lifeplan.module';
 import { WeatherModule } from './modules/weather/weather.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { FirebaseModule } from './firebase/firebase.module';
+import { ScheduleModule } from './modules/schedule/schedule.module';
 
 @Module({
   imports: [
@@ -23,6 +26,9 @@ import { WeatherModule } from './modules/weather/weather.module';
     ChatModule,
     LifePlanModule,
     WeatherModule,
+    NotificationsModule,
+    FirebaseModule,
+    ScheduleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

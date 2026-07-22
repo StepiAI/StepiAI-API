@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -23,6 +24,11 @@ export class ChatController {
     return this.chatService.getOrCreateChat(user.id);
   }
 
+  @Delete('messages')
+  async clearChat(@CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.clearChat(user.id);
+  }
+
   @Post('messages')
   async sendMessage(
     @CurrentUser() user: AuthenticatedUser,
@@ -41,6 +47,14 @@ export class ChatController {
       messageId,
       user.provider,
     );
+  }
+
+  @Post('messages/:messageId/dismiss')
+  async dismissSchedule(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.dismissScheduleProposal(user.id, messageId);
   }
 
   @Post('messages/:messageId/accept-schedule-update')

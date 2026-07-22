@@ -27,6 +27,19 @@ export interface ScheduleProposal {
   endDateTime: string;
 }
 
+export interface ScheduleAcceptedMessage {
+  type: 'schedule_accepted';
+  content: string;
+  scheduleId: string;
+  proposal: ScheduleProposal;
+}
+
+export interface ScheduleDismissedMessage {
+  type: 'schedule_dismissed';
+  content: string;
+  proposal: ScheduleProposal;
+}
+
 export interface ScheduleUpdateProposal {
   type: 'schedule_update_proposal';
   scheduleId: string;
@@ -105,6 +118,8 @@ export interface LifePlanDeleteAcceptedMessage {
 
 type ParsedAssistantResponse =
   | ScheduleProposal
+  | ScheduleAcceptedMessage
+  | ScheduleDismissedMessage
   | ScheduleUpdateProposal
   | ScheduleUpdateAcceptedMessage
   | ScheduleDeleteProposal
@@ -131,6 +146,25 @@ export class ChatService {
   async getOrCreateChat(userId: string) {
     const chat = await this.findOrCreateChatRecord(userId);
     return { ...chat };
+  }
+
+  /**
+   * Clears message history for the user's chat. Schedules created from those
+   * messages are real calendar data, not chat state, so they're unlinked
+   * (messageId -> null) rather than deleted.
+   */
+  async clearChat(userId: string) {
+    const chat = await this.findOrCreateChatRecord(userId);
+
+    await this.prisma.$transaction([
+      this.prisma.schedule.updateMany({
+        where: { message: { chatId: chat.id } },
+        data: { messageId: null },
+      }),
+      this.prisma.message.deleteMany({ where: { chatId: chat.id } }),
+    ]);
+
+    return { ...chat, messages: [] };
   }
 
   private async findOrCreateChatRecord(userId: string) {
@@ -416,6 +450,18 @@ export class ChatService {
       data: { status: 'ACCEPTED' },
     });
 
+    const acceptedMessage: ScheduleAcceptedMessage = {
+      type: 'schedule_accepted',
+      content: 'Jadwal sudah ditambahkan ke kalender.',
+      scheduleId: schedule.id,
+      proposal,
+    };
+
+    await this.prisma.message.update({
+      where: { id: message.id },
+      data: { content: JSON.stringify(acceptedMessage) },
+    });
+
     // Signing in with Supabase's Google provider doesn't by itself grant
     // Calendar API access — that still requires the separate Google Calendar
     // integration (GoogleCalendarAccount). We only attempt the sync for
@@ -450,6 +496,66 @@ export class ChatService {
         googleSyncError: String(error),
       };
     }
+  }
+
+  /**
+   * Dismisses a previously proposed schedule the user chose not to add. The
+   * proposal never became a real booking, so its placeholder Schedule row is
+   * removed rather than kept around in a "declined" state.
+   */
+  async dismissScheduleProposal(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: true, schedule: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (!message.chat) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.chat.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (!message.isScheduleProposal) {
+      throw new BadRequestException('This message is not a schedule proposal');
+    }
+
+    if (!message.schedule) {
+      throw new NotFoundException('No pending proposal found for this message');
+    }
+
+    if (message.schedule.status === 'ACCEPTED') {
+      throw new ConflictException('This schedule has already been accepted');
+    }
+
+    const proposal: ScheduleProposal = {
+      type: 'schedule_proposal',
+      summary: message.schedule.summary,
+      description: message.schedule.description,
+      location: message.schedule.location,
+      startDateTime: message.schedule.startDateTime.toISOString(),
+      endDateTime: message.schedule.endDateTime.toISOString(),
+    };
+
+    await this.prisma.schedule.delete({ where: { id: message.schedule.id } });
+
+    const dismissedMessage: ScheduleDismissedMessage = {
+      type: 'schedule_dismissed',
+      content: 'Oke, jadwal ini nggak ditambahkan.',
+      proposal,
+    };
+
+    await this.prisma.message.update({
+      where: { id: message.id },
+      data: { content: JSON.stringify(dismissedMessage) },
+    });
+
+    return { dismissed: true as const };
   }
 
   async acceptScheduleUpdateProposal(

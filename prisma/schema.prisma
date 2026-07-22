@@ -132,6 +132,16 @@ model GeocodeCache {
   @@map("geocode_cache")
 }
 
+model DeviceToken {
+  id        Int      @id @default(autoincrement())
+  userId    String   @db.Uuid
+  token     String   @unique
+  createdAt DateTime @default(now())
+  lastUsed  DateTime @default(now())
+
+  @@index([userId])
+}
+
 enum ScheduleStatus {
   PENDING
   ACCEPTED

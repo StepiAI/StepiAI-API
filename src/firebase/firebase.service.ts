@@ -13,15 +13,20 @@ export class FirebaseService implements OnModuleInit {
       const apps = admin.getApps();
 
       if (apps.length === 0) {
-        const serviceAccount = JSON.parse(
-          fs.readFileSync(
-            path.join(
-              process.cwd(),
-              'stepiai-firebase-adminsdk-fbsvc-0c66c4bb04.json',
-            ),
-            'utf8',
-          ),
-        );
+        const fromEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
+        const serviceAccount = (
+          fromEnv
+            ? JSON.parse(fromEnv)
+            : JSON.parse(
+                fs.readFileSync(
+                  path.join(
+                    process.cwd(),
+                    'stepiai-firebase-adminsdk-fbsvc-0c66c4bb04.json',
+                  ),
+                  'utf8',
+                ),
+              )
+        ) as admin.ServiceAccount;
 
         admin.initializeApp({ credential: admin.cert(serviceAccount) });
       }

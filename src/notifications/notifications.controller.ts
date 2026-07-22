@@ -1,10 +1,12 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
+import { SupabaseAuthGuard } from '../common/guards/supabase-auth.guard';
 import type { SaveDeviceTokenDto } from './dto/save-device-token.dto';
 import type { SendNotificationToUserDto } from './dto/send-notification-to-user.dto';
 import type { SaveNotificationToAllDto } from './dto/save-notification-to-all.dto';
 import type { AddNotificationJobDto } from './dto/add-notification-job.dto';
 
+@UseGuards(SupabaseAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private notificationsService: NotificationsService) {}

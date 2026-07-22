@@ -7,7 +7,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Auth, calendar_v3, google } from 'googleapis';
+import { auth as googleAuth, calendar, calendar_v3 } from '@googleapis/calendar';
+import type { Credentials } from 'google-auth-library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../weather/geocoding.service';
@@ -34,7 +35,7 @@ export class GoogleCalendarService {
   }
 
   private createOAuthClient() {
-    return new google.auth.OAuth2(
+    return new googleAuth.OAuth2(
       this.oauthClientId,
       this.oauthClientSecret,
       '',
@@ -43,7 +44,7 @@ export class GoogleCalendarService {
 
   async connect(userId: string, serverAuthCode: string) {
     const oauthClient = this.createOAuthClient();
-    let tokens: Auth.Credentials;
+    let tokens: Credentials;
 
     try {
       ({ tokens } = await oauthClient.getToken(serverAuthCode));
@@ -144,7 +145,7 @@ export class GoogleCalendarService {
     const oauthClient = this.createOAuthClient();
     oauthClient.setCredentials({ refresh_token: account.refreshToken });
 
-    let credentials: Auth.Credentials;
+    let credentials: Credentials;
     try {
       ({ credentials } = await oauthClient.refreshAccessToken());
     } catch (error) {
@@ -174,7 +175,7 @@ export class GoogleCalendarService {
     const accessToken = await this.getValidAccessToken(userId);
     const oauthClient = this.createOAuthClient();
     oauthClient.setCredentials({ access_token: accessToken });
-    return google.calendar({ version: 'v3', auth: oauthClient });
+    return calendar({ version: 'v3', auth: oauthClient });
   }
 
   async listEvents(userId: string, timeMin?: string, timeMax?: string) {

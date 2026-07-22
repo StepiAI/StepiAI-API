@@ -96,15 +96,25 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-"# StepiAI-API" 
+"# StepiAI-API"
 
 ## API behavior notes
 
 - [StepiAI chat behavior and frontend compatibility](docs/AI_CHAT_BEHAVIOR.md)
+- [React Native voice agent example](examples/react-native-voice-agent/README.md)
 
 ## OpenAI integration
 
 #### taruh OPENAI_API_KEY di local env.
+
+Azure Speech text-to-speech:
+
+```env
+AZURE_SPEECH_ENDPOINT="https://your-resource.cognitiveservices.azure.com/"
+AZURE_SPEECH_KEY="your-speech-key"
+AZURE_RESOURCE_ID="optional-for-aad-auth"
+```
+
 Contoh Implementasi:
 
 ```ts
@@ -134,12 +144,11 @@ response.setHeader('Content-Type', speech.contentType);
 response.send(speech.audio);
 ```
 
-
 ### Streaming voice input
 
-`POST /api/openai/realtime/session` nanti ini yang buat  a short-lived, authenticated ephemeral key untuk di client browser WebRTC session. 
+`POST /api/openai/realtime/session` nanti ini yang buat a short-lived, authenticated ephemeral key untuk di client browser WebRTC session.
 
-Nanti browser kirim microphone stream langsung ke OpenAI, biar  `OPENAI_API_KEY` tetep private. Server voice activity nanti detect dan identifiy speech turns dari user ataupun agent sidenya and baru kirim balik response setelah brief pause. The Realtime data channel emits live di `conversation.item.input_audio_transcription.delta` 
+Nanti browser kirim microphone stream langsung ke OpenAI, biar `OPENAI_API_KEY` tetep private. Server voice activity nanti detect dan identifiy speech turns dari user ataupun agent sidenya and baru kirim balik response setelah brief pause. The Realtime data channel emits live di `conversation.item.input_audio_transcription.delta`
 events nya ketika user sedang ngomong.
 
 > Note: Implementasi FE nya tolong cari tahu ya, ku gak ngeh soalnya apakah works or not
@@ -198,10 +207,10 @@ await peerConnection.setRemoteDescription({
 });
 ```
 
-> AI GENERATED: 
-The endpoint requires the existing Supabase bearer token and hashes the user ID
-into OpenAI's safety identifier. To create a feature-specific voice experience,
-inject `OpenAiService` into that controller and call
-`createRealtimeClientSecret({ instructions: '...' })`; do not send a permanent
-OpenAI key to the browser. `getClient()` remains available for other OpenAI
-endpoints.
+> AI GENERATED:
+> The endpoint requires the existing Supabase bearer token and hashes the user ID
+> into OpenAI's safety identifier. To create a feature-specific voice experience,
+> inject `OpenAiService` into that controller and call
+> `createRealtimeClientSecret({ instructions: '...' })`; do not send a permanent
+> OpenAI key to the browser. `getClient()` remains available for other OpenAI
+> endpoints.

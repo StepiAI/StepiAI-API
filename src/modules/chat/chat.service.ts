@@ -20,6 +20,7 @@ import {
 import { CreateMessageDto } from './dto/create-message.dto';
 import {
   buildScheduleInstructions,
+  buildVoiceScheduleInstructions,
   normalizeTimeZone,
 } from './schedule-instructions';
 import {
@@ -31,6 +32,7 @@ import {
   type ConflictDecision,
   type TimeRange,
 } from './schedule-safety';
+import { buildVoiceAgentResponse } from './voice-response';
 
 export { isAffirmativeReply } from './schedule-safety';
 
@@ -132,7 +134,7 @@ export interface LifePlanDeleteAcceptedMessage {
   proposal: LifePlanDeleteProposal;
 }
 
-type ParsedAssistantResponse =
+export type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleAcceptedMessage
   | ScheduleDismissedMessage
@@ -253,6 +255,20 @@ export class ChatService {
   }
 
   async sendMessage(userId: string, dto: CreateMessageDto) {
+    return this.sendMessageWithMode(userId, dto, 'chat');
+  }
+
+  async sendVoiceMessage(userId: string, dto: CreateMessageDto) {
+    const response = await this.sendMessageWithMode(userId, dto, 'voice');
+
+    return buildVoiceAgentResponse(response, dto.timezone);
+  }
+
+  private async sendMessageWithMode(
+    userId: string,
+    dto: CreateMessageDto,
+    mode: 'chat' | 'voice',
+  ) {
     const chat = await this.findOrCreateChatRecord(userId);
     const now = new Date();
 
@@ -318,7 +334,10 @@ export class ChatService {
 
     try {
       const raw = await this.openAiService.generateText(conversation, {
-        instructions: buildScheduleInstructions(now, dto.timezone),
+        instructions:
+          mode === 'voice'
+            ? buildVoiceScheduleInstructions(now, dto.timezone)
+            : buildScheduleInstructions(now, dto.timezone),
       });
 
       parsed = this.normalizeAssistantResponse(JSON.parse(raw));

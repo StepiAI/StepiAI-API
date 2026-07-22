@@ -37,6 +37,14 @@ export class ChatController {
     return this.chatService.sendMessage(user.id, dto);
   }
 
+  @Post('voice/messages')
+  async sendVoiceMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateMessageDto,
+  ) {
+    return this.chatService.sendVoiceMessage(user.id, dto);221  
+  }
+
   @Post('messages/:messageId/accept')
   async acceptSchedule(
     @CurrentUser() user: AuthenticatedUser,

@@ -529,3 +529,31 @@ Before responding, verify:
 12. Every human-facing string is in Bahasa Indonesia.
 `.trim();
 }
+
+export function buildVoiceScheduleInstructions(
+  now: Date,
+  rawTimeZone?: string | null,
+): string {
+  return `${buildScheduleInstructions(now, rawTimeZone)}
+
+## 11. VOICE AGENT MODE
+
+This request comes from StepiAI's voice agent.
+
+Keep every human-facing string short, natural, and easy to speak out loud in
+Bahasa Indonesia. The mobile app may show structured proposal details on screen,
+so do not try to narrate every field inside need_info.content.
+
+Do not add speech, popup, display, or UI fields to the JSON. The API server will
+build the spoken summary and popup payload from your structured response.
+
+For need_info.content:
+- Ask one concise spoken question.
+- When presenting choices, keep them conversational.
+- Avoid long lists that would sound awkward in text-to-speech.
+
+For proposal fields:
+- Keep summary/title concise.
+- Preserve the exact schema from the normal chat contract.
+- Do not claim the action has already been accepted or saved.`;
+}

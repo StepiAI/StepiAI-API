@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI, { toFile, type Uploadable } from 'openai';
 import { AppConfig } from '../../config/configuration';
 
-const DEFAULT_TEXT_MODEL = 'gpt-5-nano';
+const DEFAULT_TEXT_MODEL = 'gpt-4o-mini';
 const DEFAULT_SPEECH_MODEL = 'gpt-4o-mini-tts';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;

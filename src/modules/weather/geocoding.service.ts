@@ -25,6 +25,31 @@ interface NominatimResult {
   display_name?: string;
 }
 
+interface NominatimReverseResult {
+  display_name?: string;
+  address?: {
+    road?: string;
+    neighbourhood?: string;
+    suburb?: string;
+    village?: string;
+    town?: string;
+    city?: string;
+    city_district?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+  };
+}
+
+export interface ReverseGeocoded {
+  shortLabel: string;
+  fullLabel: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
+
 export interface PlaceSuggestion {
   name: string;
   context: string | null;
@@ -99,8 +124,131 @@ export class GeocodingService {
     return resolved;
   }
 
+  async reverseGeocode(
+    latitude: number,
+    longitude: number,
+  ): Promise<ReverseGeocoded | null> {
+    return this.enqueueNominatim(async () => {
+      const url = new URL(NOMINATIM_REVERSE_URL);
+      url.searchParams.set('lat', latitude.toString());
+      url.searchParams.set('lon', longitude.toString());
+      url.searchParams.set('format', 'jsonv2');
+      url.searchParams.set('zoom', '16'); 
+      url.searchParams.set('accept-language', 'id');
+
+      try {
+        const response = await fetch(url, {
+          headers: { 'User-Agent': NOMINATIM_USER_AGENT },
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = (await response.json()) as NominatimReverseResult;
+        const addr = result.address;
+        if (!addr && !result.display_name) {
+          return null;
+        }
+
+        const area =
+          addr?.road ??
+          addr?.neighbourhood ??
+          addr?.suburb ??
+          addr?.village ??
+          null;
+        const city =
+          addr?.city ??
+          addr?.town ??
+          addr?.city_district ??
+          addr?.county ??
+          addr?.state ??
+          null;
+
+        const shortLabel =
+          [area, city].filter(Boolean).join(', ') ||
+          result.display_name ||
+          `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+
+        return {
+          shortLabel,
+          fullLabel: result.display_name ?? null,
+          latitude,
+          longitude,
+        };
+      } catch (error) {
+        this.logger.warn(
+          `Reverse geocode gagal buat ${latitude},${longitude}: ${this.describe(error)}`,
+        );
+        return null;
+      }
+    });
+  }
+
   private normalize(location: string): string {
     return location.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  // simpen koordinat yg user pilih sendiri ke cache (di-key sama teks lokasi).
+  // dipake pas bikin event: user udah milih tempat pasti, jd gak perlu geocode ulang.
+  async cachePlace(
+    location: string,
+    coords: { latitude: number; longitude: number; label?: string | null },
+  ): Promise<void> {
+    const query = this.normalize(location);
+    if (!query) {
+      return;
+    }
+
+    const data = {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      label: coords.label ?? null,
+      provider: 'user-pick',
+    };
+
+    await this.prisma.geocodeCache
+      .upsert({ where: { query }, create: { query, ...data }, update: data })
+      .catch(() => undefined);
+  }
+
+  // gw lookup cache-only buat banyak lokasi sekaligus
+  async lookupCachedMany(
+    locations: string[],
+  ): Promise<Map<string, ResolvedLocation>> {
+    const byOriginal = new Map<string, ResolvedLocation>();
+    const originalsByQuery = new Map<string, string[]>();
+
+    for (const location of locations) {
+      const query = this.normalize(location);
+      if (!query) {
+        continue;
+      }
+      const originals = originalsByQuery.get(query) ?? [];
+      originals.push(location);
+      originalsByQuery.set(query, originals);
+    }
+
+    if (originalsByQuery.size === 0) {
+      return byOriginal;
+    }
+
+    const rows = await this.prisma.geocodeCache.findMany({
+      where: { query: { in: [...originalsByQuery.keys()] } },
+    });
+
+    for (const row of rows) {
+      const resolved: ResolvedLocation = {
+        latitude: row.latitude,
+        longitude: row.longitude,
+        label: row.label,
+        provider: row.provider,
+      };
+      for (const original of originalsByQuery.get(row.query) ?? []) {
+        byOriginal.set(original, resolved);
+      }
+    }
+
+    return byOriginal;
   }
 
   async searchPlaces(query: string, limit = 5): Promise<PlaceSuggestion[]> {

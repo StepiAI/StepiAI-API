@@ -12,6 +12,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
 import { ForecastQueryDto } from './dto/forecast-query.dto';
+import { ReverseGeocodeQueryDto } from './dto/reverse-geocode-query.dto';
 import { SearchPlacesQueryDto } from './dto/search-places-query.dto';
 import { GeocodingService } from './geocoding.service';
 import { WeatherService } from './weather.service';
@@ -29,6 +30,20 @@ export class WeatherController {
   @Get('places')
   searchPlaces(@Query() query: SearchPlacesQueryDto) {
     return this.geocodingService.searchPlaces(query.q, query.limit);
+  }
+
+  @Get('reverse')
+  async reverseGeocode(@Query() query: ReverseGeocodeQueryDto) {
+    const place = await this.geocodingService.reverseGeocode(
+      query.latitude,
+      query.longitude,
+    );
+
+    if (!place) {
+      throw new NotFoundException('Lokasi tidak ketemu buat koordinat itu.');
+    }
+
+    return place;
   }
 
   @Get('forecast')

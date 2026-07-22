@@ -14,6 +14,8 @@ import { WeatherModule } from './modules/weather/weather.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
+import { RoutingModule } from './modules/routing/routing.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
 import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
@@ -27,10 +29,12 @@ import { VoiceModule } from './modules/voice/voice.module';
     ChatModule,
     LifePlanModule,
     WeatherModule,
-    // NotificationsModule,
-    // FirebaseModule,
+    NotificationsModule,
+    FirebaseModule,
     ScheduleModule,
     VoiceModule,
+    RoutingModule,
+    AlertsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

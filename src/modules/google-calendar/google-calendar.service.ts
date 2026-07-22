@@ -7,9 +7,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Auth, calendar_v3, google } from 'googleapis';
+import { auth as googleAuth, calendar, calendar_v3 } from '@googleapis/calendar';
+import type { Credentials } from 'google-auth-library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GeocodingService } from '../weather/geocoding.service';
 import { CreateEventDto } from './dto/create-event.dto';
 
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
@@ -21,6 +23,7 @@ export class GoogleCalendarService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly geocoding: GeocodingService,
     configService: ConfigService<AppConfig, true>,
   ) {
     const { clientId, clientSecret } = configService.get('google', {
@@ -32,7 +35,7 @@ export class GoogleCalendarService {
   }
 
   private createOAuthClient() {
-    return new google.auth.OAuth2(
+    return new googleAuth.OAuth2(
       this.oauthClientId,
       this.oauthClientSecret,
       '',
@@ -41,7 +44,7 @@ export class GoogleCalendarService {
 
   async connect(userId: string, serverAuthCode: string) {
     const oauthClient = this.createOAuthClient();
-    let tokens: Auth.Credentials;
+    let tokens: Credentials;
 
     try {
       ({ tokens } = await oauthClient.getToken(serverAuthCode));
@@ -142,7 +145,7 @@ export class GoogleCalendarService {
     const oauthClient = this.createOAuthClient();
     oauthClient.setCredentials({ refresh_token: account.refreshToken });
 
-    let credentials: Auth.Credentials;
+    let credentials: Credentials;
     try {
       ({ credentials } = await oauthClient.refreshAccessToken());
     } catch (error) {
@@ -172,7 +175,7 @@ export class GoogleCalendarService {
     const accessToken = await this.getValidAccessToken(userId);
     const oauthClient = this.createOAuthClient();
     oauthClient.setCredentials({ access_token: accessToken });
-    return google.calendar({ version: 'v3', auth: oauthClient });
+    return calendar({ version: 'v3', auth: oauthClient });
   }
 
   async listEvents(userId: string, timeMin?: string, timeMax?: string) {
@@ -186,10 +189,36 @@ export class GoogleCalendarService {
         singleEvents: true,
         orderBy: 'startTime',
       });
-      return data.items ?? [];
+      return this.attachSavedLocations(data.items ?? []);
     } catch (error) {
       throw this.toGoogleApiException(error, 'list calendar events');
     }
+  }
+
+  private async attachSavedLocations(items: calendar_v3.Schema$Event[]) {
+    const locations = items
+      .map((item) => item.location)
+      .filter((location): location is string => Boolean(location));
+
+    if (locations.length === 0) {
+      return items;
+    }
+
+    const coordsByLocation = await this.geocoding.lookupCachedMany(locations);
+
+    if (coordsByLocation.size === 0) {
+      return items;
+    }
+
+    return items.map((item) => {
+      const coords = item.location
+        ? coordsByLocation.get(item.location)
+        : undefined;
+
+      return coords
+        ? { ...item, latitude: coords.latitude, longitude: coords.longitude }
+        : item;
+    });
   }
 
   async createEvent(userId: string, input: CreateEventDto) {
@@ -215,10 +244,51 @@ export class GoogleCalendarService {
           recurrence: input.recurrence?.length ? input.recurrence : undefined,
         },
       });
+
+      // Google gak nyimpen koordinat, jd kalau user milih tempat (ada lat/lng),
+      // kita seed ke geocode_cache di-key sama teks lokasinya. nanti pas list/
+      // detail, teks lokasi yg sama bakal ke-resolve ke koordinat pilihan ini.
+      if (
+        input.location &&
+        input.latitude !== undefined &&
+        input.longitude !== undefined
+      ) {
+        await this.geocoding.cachePlace(input.location, {
+          latitude: input.latitude,
+          longitude: input.longitude,
+          label: input.location,
+        });
+
+        return { ...data, latitude: input.latitude, longitude: input.longitude };
+      }
+
       return data;
     } catch (error) {
       throw this.toGoogleApiException(error, 'create calendar event');
     }
+  }
+
+  // "Move this meeting"
+  async rescheduleEvent(
+    userId: string,
+    eventId: string,
+    startDateTime: string,
+    endDateTime: string,
+  ) {
+    const start = new Date(startDateTime);
+    const end = new Date(endDateTime);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid start or end time.');
+    }
+    if (end.getTime() <= start.getTime()) {
+      throw new BadRequestException('Event must end after it starts.');
+    }
+
+    return this.patchEvent(userId, eventId, {
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: end.toISOString() },
+    });
   }
 
   async patchEvent(

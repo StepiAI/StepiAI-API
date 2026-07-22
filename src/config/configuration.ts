@@ -17,6 +17,9 @@ export interface AppConfig {
     clientId: string;
     clientSecret: string;
   };
+  routing: {
+    tomTomApiKey: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -37,5 +40,8 @@ export default (): AppConfig => ({
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+  },
+  routing: {
+    tomTomApiKey: process.env.TOMTOM_API_KEY ?? '',
   },
 });

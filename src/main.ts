@@ -16,6 +16,8 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
-  await app.listen(process.env.PORT ?? 3000);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`>>> API listening on port ${port} (PORT env = ${process.env.PORT ?? 'unset'})`);
 }
 void bootstrap();

@@ -86,7 +86,7 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('15:15');
   });
 
-  it('arahin study plan supaya nanya natural dan infer field yang udah jelas', () => {
+  it('arahin life plan supaya nanya natural dan infer field yang udah jelas', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
     expect(instructions).toContain('If the user writes in Indonesian');
@@ -111,12 +111,12 @@ describe('buildScheduleInstructions', () => {
     );
   });
 
-  it('ngarahin agent buat update study plan lewat proposal update', () => {
+  it('ngarahin agent buat update life plan lewat proposal update', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain('study_plan_update_proposal');
-    expect(instructions).toContain('"studyPlanId": string UUID');
-    expect(instructions).toContain('COMPLETE updated study plan payload');
+    expect(instructions).toContain('life_plan_update_proposal');
+    expect(instructions).toContain('"lifePlanId": string UUID');
+    expect(instructions).toContain('COMPLETE updated life plan payload');
     expect(instructions).toContain('Do not apply the update directly');
   });
 
@@ -130,13 +130,13 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('create or schedule a NEW event');
   });
 
-  it('ngarahin agent buat delete schedule dan study plan lewat proposal delete', () => {
+  it('ngarahin agent buat delete schedule dan life plan lewat proposal delete', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
     expect(instructions).toContain('schedule_delete_proposal');
-    expect(instructions).toContain('study_plan_delete_proposal');
+    expect(instructions).toContain('life_plan_delete_proposal');
     expect(instructions).toContain('"scheduleId": string UUID');
-    expect(instructions).toContain('"studyPlanId": string UUID');
+    expect(instructions).toContain('"lifePlanId": string UUID');
     expect(instructions).toContain('Do not delete directly');
   });
 });

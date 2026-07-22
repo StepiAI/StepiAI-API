@@ -9,9 +9,10 @@ import { AuthModule } from './common/auth.module';
 import { OpenAiModule } from './modules/openai/openai.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { LifePlanModule } from './modules/lifePlan/lifeplan.module';
+import { WeatherModule } from './modules/weather/weather.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { FirebaseModule } from './firebase/firebase.module';
-import { StudyPlanModule } from './modules/studyPlan/studyplan.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
 
 @Module({
@@ -23,9 +24,10 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
     OpenAiModule,
     GoogleCalendarModule,
     ChatModule,
+    LifePlanModule,
+    WeatherModule,
     NotificationsModule,
     FirebaseModule,
-    StudyPlanModule,
     ScheduleModule,
   ],
   controllers: [AppController],

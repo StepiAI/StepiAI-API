@@ -8,12 +8,6 @@ export interface AppConfig {
   ai: {
     openAiApiKey: string;
   };
-  maps: {
-    googleMapsApiKey: string;
-  };
-  weather: {
-    apiKey: string;
-  };
   google: {
     clientId: string;
     clientSecret: string;
@@ -29,12 +23,6 @@ export default (): AppConfig => ({
   },
   ai: {
     openAiApiKey: process.env.OPENAI_API_KEY ?? '',
-  },
-  maps: {
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
-  },
-  weather: {
-    apiKey: process.env.WEATHER_API_KEY ?? '',
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',

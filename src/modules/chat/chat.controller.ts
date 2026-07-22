@@ -81,27 +81,27 @@ export class ChatController {
     );
   }
 
-  @Post('messages/:messageId/accept-study-plan')
-  async acceptStudyPlan(
+  @Post('messages/:messageId/accept-life-plan')
+  async acceptLifePlan(
     @CurrentUser() user: AuthenticatedUser,
     @Param('messageId', ParseUUIDPipe) messageId: string,
   ) {
-    return this.chatService.acceptStudyPlanProposal(user.id, messageId);
+    return this.chatService.acceptLifePlanProposal(user.id, messageId);
   }
 
-  @Post('messages/:messageId/accept-study-plan-update')
-  async acceptStudyPlanUpdate(
+  @Post('messages/:messageId/accept-life-plan-update')
+  async acceptLifePlanUpdate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('messageId', ParseUUIDPipe) messageId: string,
   ) {
-    return this.chatService.acceptStudyPlanUpdateProposal(user.id, messageId);
+    return this.chatService.acceptLifePlanUpdateProposal(user.id, messageId);
   }
 
-  @Post('messages/:messageId/accept-study-plan-delete')
-  async acceptStudyPlanDelete(
+  @Post('messages/:messageId/accept-life-plan-delete')
+  async acceptLifePlanDelete(
     @CurrentUser() user: AuthenticatedUser,
     @Param('messageId', ParseUUIDPipe) messageId: string,
   ) {
-    return this.chatService.acceptStudyPlanDeleteProposal(user.id, messageId);
+    return this.chatService.acceptLifePlanDeleteProposal(user.id, messageId);
   }
 }

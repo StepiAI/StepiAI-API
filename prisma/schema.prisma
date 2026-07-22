@@ -111,6 +111,19 @@ model StudyPlan {
   @@map("study_plans")
 }
 
+// hasil geocoding di-cache biar 1 lokasi gak di-resolve berulang tiap cek cuaca.
+// PK-nya query yg udah dinormalisasi (lowercase + trim), bukan teks aslinya.
+model GeocodeCache {
+  query     String   @id
+  latitude  Float
+  longitude Float
+  label     String?
+  provider  String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("geocode_cache")
+}
+
 enum ScheduleStatus {
   PENDING
   ACCEPTED

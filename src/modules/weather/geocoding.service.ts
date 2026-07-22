@@ -103,6 +103,69 @@ export class GeocodingService {
     return location.trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  // simpen koordinat yg user pilih sendiri ke cache (di-key sama teks lokasi).
+  // dipake pas bikin event: user udah milih tempat pasti, jd gak perlu geocode ulang.
+  async cachePlace(
+    location: string,
+    coords: { latitude: number; longitude: number; label?: string | null },
+  ): Promise<void> {
+    const query = this.normalize(location);
+    if (!query) {
+      return;
+    }
+
+    const data = {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      label: coords.label ?? null,
+      provider: 'user-pick',
+    };
+
+    await this.prisma.geocodeCache
+      .upsert({ where: { query }, create: { query, ...data }, update: data })
+      .catch(() => undefined);
+  }
+
+  // gw lookup cache-only buat banyak lokasi sekaligus
+  async lookupCachedMany(
+    locations: string[],
+  ): Promise<Map<string, ResolvedLocation>> {
+    const byOriginal = new Map<string, ResolvedLocation>();
+    const originalsByQuery = new Map<string, string[]>();
+
+    for (const location of locations) {
+      const query = this.normalize(location);
+      if (!query) {
+        continue;
+      }
+      const originals = originalsByQuery.get(query) ?? [];
+      originals.push(location);
+      originalsByQuery.set(query, originals);
+    }
+
+    if (originalsByQuery.size === 0) {
+      return byOriginal;
+    }
+
+    const rows = await this.prisma.geocodeCache.findMany({
+      where: { query: { in: [...originalsByQuery.keys()] } },
+    });
+
+    for (const row of rows) {
+      const resolved: ResolvedLocation = {
+        latitude: row.latitude,
+        longitude: row.longitude,
+        label: row.label,
+        provider: row.provider,
+      };
+      for (const original of originalsByQuery.get(row.query) ?? []) {
+        byOriginal.set(original, resolved);
+      }
+    }
+
+    return byOriginal;
+  }
+
   async searchPlaces(query: string, limit = 5): Promise<PlaceSuggestion[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) {

@@ -17,6 +17,7 @@ import { ConnectGoogleCalendarDto } from './dto/connect-google-calendar.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { RescheduleEventDto } from './dto/reschedule-event.dto';
+import { PushLaterDto } from './dto/push-later.dto';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('integrations/google-calendar')
@@ -47,6 +48,19 @@ export class GoogleCalendarController {
     @Body() dto: CreateEventDto,
   ) {
     return this.googleCalendarService.createEvent(user.id, dto);
+  }
+
+  @Post('events/push-later')
+  pushEventsLater(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: PushLaterDto,
+  ) {
+    return this.googleCalendarService.pushEventsLater(
+      user.id,
+      dto.fromDateTime,
+      dto.toDateTime,
+      dto.delayMinutes ?? 15,
+    );
   }
 
   @Patch('events/:id')

@@ -305,6 +305,37 @@ export class GoogleCalendarService {
     return data;
   }
 
+  // "Push everything later"
+  async pushEventsLater(
+    userId: string,
+    fromDateTime: string,
+    toDateTime: string,
+    delayMinutes: number,
+  ) {
+    const delayMs = delayMinutes * 60_000;
+    const events = await this.listEvents(userId, fromDateTime, toDateTime);
+
+    let shifted = 0;
+    for (const event of events) {
+      const startIso = event.start?.dateTime;
+      const endIso = event.end?.dateTime;
+      if (!event.id || !startIso || !endIso) {
+        continue;
+      }
+
+      const newStart = new Date(new Date(startIso).getTime() + delayMs);
+      const newEnd = new Date(new Date(endIso).getTime() + delayMs);
+
+      await this.patchEvent(userId, event.id, {
+        start: { dateTime: newStart.toISOString() },
+        end: { dateTime: newEnd.toISOString() },
+      });
+      shifted += 1;
+    }
+
+    return { shifted, delayMinutes };
+  }
+
   async deleteEvent(userId: string, eventId: string) {
     const calendar = await this.getCalendarClient(userId);
     await calendar.events.delete({ calendarId: 'primary', eventId });

@@ -84,7 +84,7 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('15:15');
   });
 
-  it('arahin study plan supaya nanya natural dan infer field yang udah jelas', () => {
+  it('arahin life plan supaya nanya natural dan infer field yang udah jelas', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
     expect(instructions).toContain('Default to natural Bahasa Indonesia');
@@ -121,25 +121,13 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('Do not ask another question');
   });
 
-  it('ngarahin agent buat update study plan lewat proposal update', () => {
+  it('ngarahin agent buat update life plan lewat proposal update', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain('study_plan_context');
-    expect(instructions).toContain('study_plan_update_proposal');
-    expect(instructions).toContain('"studyPlanId": string');
-    expect(instructions).toContain('complete updated study plan');
-    expect(instructions).toContain('Never ask the user to provide the studyPlanId');
-    expect(instructions).toContain('Do not claim that the update has already been applied');
-  });
-
-  it('ngarahin needs_info supaya afirmasi tidak muter pertanyaan yang sama', () => {
-    const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
-
-    expect(instructions).toContain('Never ask the user to send an internal ID');
-    expect(instructions).toContain('Never combine a missing-information request');
-    expect(instructions).toContain('benar seperti itu');
-    expect(instructions).toContain('Do not repeat the exact same needs_info content');
-    expect(instructions).toContain('ask only which study plan by title/name');
+    expect(instructions).toContain('life_plan_update_proposal');
+    expect(instructions).toContain('"lifePlanId": string UUID');
+    expect(instructions).toContain('COMPLETE updated life plan payload');
+    expect(instructions).toContain('Do not apply the update directly');
   });
 
   it('ngarahin agent buat update schedule biasa lewat proposal update', () => {
@@ -152,16 +140,13 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('A new schedule requires');
   });
 
-  it('ngarahin agent buat delete schedule dan study plan lewat proposal delete', () => {
+  it('ngarahin agent buat delete schedule dan life plan lewat proposal delete', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
     expect(instructions).toContain('schedule_delete_proposal');
-    expect(instructions).toContain('study_plan_delete_proposal');
-    expect(instructions).toContain('"scheduleId": string');
-    expect(instructions).toContain('"studyPlanId": string');
-    expect(instructions).toContain('Do not claim that the schedule has already been deleted');
-    expect(instructions).toContain(
-      'Do not claim that the study plan has already been deleted',
-    );
+    expect(instructions).toContain('life_plan_delete_proposal');
+    expect(instructions).toContain('"scheduleId": string UUID');
+    expect(instructions).toContain('"lifePlanId": string UUID');
+    expect(instructions).toContain('Do not delete directly');
   });
 });

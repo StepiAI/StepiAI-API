@@ -1,4 +1,12 @@
-import { IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateEventDto {
   @IsString()
@@ -20,4 +28,31 @@ export class CreateEventDto {
 
   @IsISO8601()
   endDateTime!: string;
+
+  /**
+   * Aturan pengulangan format RFC 5545, mis. ["RRULE:FREQ=WEEKLY;INTERVAL=2"].
+   * Diteruskan apa adanya ke Google — mereka yang jadi sumber kebenaran soal
+   * tanggal instance-nya, jadi kita gak perlu ngitung sendiri.
+   */
+  /**
+   * Zona waktu IANA, mis. "Asia/Jakarta". Wajib diisi kalau `recurrence` ada —
+   * Google nolak event berulang tanpa ini, karena RRULE butuh tau "jam 2 pagi"
+   * itu jam 2 di zona mana buat ngitung instance berikutnya.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timeZone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  @Matches(/^(RRULE|RDATE|EXRULE|EXDATE):/, {
+    each: true,
+    message:
+      'recurrence harus diawali RRULE:, RDATE:, EXRULE:, atau EXDATE: (RFC 5545)',
+  })
+  recurrence?: string[];
 }

@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import {
   DifficultyLevel,
   FocusPreferences,
@@ -5,13 +6,13 @@ import {
   Weekday,
 } from '@prisma/client';
 import {
-  buildStudyPlanScheduleData,
-  StudyPlanService,
-} from './studyplan.service';
+  buildLifePlanScheduleData,
+  LifePlanService,
+} from './lifeplan.service';
 
-describe('buildStudyPlanScheduleData', () => {
+describe('buildLifePlanScheduleData', () => {
   it('creates schedule entries for each available weekday in the requested range', () => {
-    const schedules = buildStudyPlanScheduleData(
+    const schedules = buildLifePlanScheduleData(
       {
         userId: 'user-1',
         title: 'Math prep',
@@ -42,10 +43,10 @@ describe('buildStudyPlanScheduleData', () => {
   });
 });
 
-describe('StudyPlanService.createFromAi', () => {
-  it('creates accepted schedule entries when an AI study plan is accepted', async () => {
-    const studyPlan = {
-      id: 'study-plan-1',
+describe('LifePlanService.createFromAi', () => {
+  it('creates accepted schedule entries when an AI life plan is accepted', async () => {
+    const lifePlan = {
+      id: 'life-plan-1',
       userId: 'user-1',
       title: 'Math prep',
     };
@@ -55,8 +56,8 @@ describe('StudyPlanService.createFromAi', () => {
       },
       $transaction: jest.fn(async (callback) =>
         callback({
-          studyPlan: {
-            create: jest.fn().mockResolvedValue(studyPlan),
+          lifePlan: {
+            create: jest.fn().mockResolvedValue(lifePlan),
           },
           schedule: {
             createMany: jest.fn(),
@@ -64,7 +65,7 @@ describe('StudyPlanService.createFromAi', () => {
         }),
       ),
     };
-    const service = new StudyPlanService(prisma as never);
+    const service = new LifePlanService(prisma as never);
 
     const result = await service.createFromAi('user-1', {
       title: 'Math prep',
@@ -81,13 +82,13 @@ describe('StudyPlanService.createFromAi', () => {
 
     expect(result).toEqual({
       created: true,
-      studyPlan,
+      lifePlan,
     });
 
     const transactionCallback = prisma.$transaction.mock.calls[0][0];
     const tx = {
-      studyPlan: {
-        create: jest.fn().mockResolvedValue(studyPlan),
+      lifePlan: {
+        create: jest.fn().mockResolvedValue(lifePlan),
       },
       schedule: {
         createMany: jest.fn(),
@@ -132,7 +133,7 @@ describe('StudyPlanService.createFromAi', () => {
       },
       $transaction: jest.fn(),
     };
-    const service = new StudyPlanService(prisma as never);
+    const service = new LifePlanService(prisma as never);
 
     const result = await service.createFromAi('user-1', {
       title: 'Math prep',
@@ -154,7 +155,7 @@ describe('StudyPlanService.createFromAi', () => {
       throw new Error('Expected a conflict result');
     }
 
-    expect(result.conflict.type).toBe('study_plan_conflict');
+    expect(result.conflict.type).toBe('life_plan_conflict');
     expect(result.conflict.conflicts).toHaveLength(1);
     expect(result.conflict.options.map((option) => option.type)).toEqual([
       'skip_day_and_extend',
@@ -177,16 +178,16 @@ describe('StudyPlanService.createFromAi', () => {
   });
 });
 
-describe('StudyPlanService.updateFromAi', () => {
-  it('replaces linked schedules as accepted when an AI study plan update is accepted', async () => {
-    const studyPlan = {
-      id: 'study-plan-1',
+describe('LifePlanService.updateFromAi', () => {
+  it('replaces linked schedules as accepted when an AI life plan update is accepted', async () => {
+    const lifePlan = {
+      id: 'life-plan-1',
       userId: 'user-1',
       title: 'Updated math prep',
     };
     const tx = {
-      studyPlan: {
-        update: jest.fn().mockResolvedValue(studyPlan),
+      lifePlan: {
+        update: jest.fn().mockResolvedValue(lifePlan),
       },
       schedule: {
         deleteMany: jest.fn(),
@@ -194,17 +195,17 @@ describe('StudyPlanService.updateFromAi', () => {
       },
     };
     const prisma = {
-      studyPlan: {
-        findFirst: jest.fn().mockResolvedValue(studyPlan),
+      lifePlan: {
+        findFirst: jest.fn().mockResolvedValue(lifePlan),
       },
       schedule: {
         findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn(async (callback) => callback(tx)),
     };
-    const service = new StudyPlanService(prisma as never);
+    const service = new LifePlanService(prisma as never);
 
-    const result = await service.updateFromAi('user-1', 'study-plan-1', {
+    const result = await service.updateFromAi('user-1', 'life-plan-1', {
       title: 'Updated math prep',
       goal: 'Prepare for final exam',
       topic: ['Algebra'],
@@ -219,23 +220,23 @@ describe('StudyPlanService.updateFromAi', () => {
 
     expect(result).toEqual({
       updated: true,
-      studyPlan,
+      lifePlan,
     });
-    expect(tx.studyPlan.update).toHaveBeenCalledWith(
+    expect(tx.lifePlan.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'study-plan-1' },
+        where: { id: 'life-plan-1' },
       }),
     );
     expect(tx.schedule.deleteMany).toHaveBeenCalledWith({
       where: {
         userId: 'user-1',
-        studyPlanId: 'study-plan-1',
+        lifePlanId: 'life-plan-1',
       },
     });
     expect(tx.schedule.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
-          studyPlanId: 'study-plan-1',
+          lifePlanId: 'life-plan-1',
           status: ScheduleStatus.ACCEPTED,
           startDateTime: new Date(Date.UTC(2026, 6, 20, 10, 0)),
           endDateTime: new Date(Date.UTC(2026, 6, 20, 12, 0)),
@@ -245,26 +246,64 @@ describe('StudyPlanService.updateFromAi', () => {
   });
 });
 
-describe('StudyPlanService.deleteFromAi', () => {
-  it('deletes an owned study plan', async () => {
-    const studyPlan = {
-      id: 'study-plan-1',
+describe('LifePlanService.deleteFromAi', () => {
+  it('deletes an owned life plan', async () => {
+    const lifePlan = {
+      id: 'life-plan-1',
       userId: 'user-1',
       title: 'Math prep',
     };
     const prisma = {
-      studyPlan: {
-        findFirst: jest.fn().mockResolvedValue(studyPlan),
-        delete: jest.fn().mockResolvedValue(studyPlan),
+      lifePlan: {
+        findFirst: jest.fn().mockResolvedValue(lifePlan),
+        delete: jest.fn().mockResolvedValue(lifePlan),
       },
     };
-    const service = new StudyPlanService(prisma as never);
+    const service = new LifePlanService(prisma as never);
 
     await expect(
-      service.deleteFromAi('user-1', 'study-plan-1'),
-    ).resolves.toEqual(studyPlan);
-    expect(prisma.studyPlan.delete).toHaveBeenCalledWith({
-      where: { id: 'study-plan-1' },
+      service.deleteFromAi('user-1', 'life-plan-1'),
+    ).resolves.toEqual(lifePlan);
+    expect(prisma.lifePlan.delete).toHaveBeenCalledWith({
+      where: { id: 'life-plan-1' },
     });
+  });
+});
+
+describe('LifePlanService.findOneByUser', () => {
+  it('returns an owned life plan with its schedules', async () => {
+    const lifePlan = {
+      id: 'life-plan-1',
+      userId: 'user-1',
+      title: 'Math prep',
+      schedules: [{ id: 'schedule-1' }],
+    };
+    const prisma = {
+      lifePlan: {
+        findFirst: jest.fn().mockResolvedValue(lifePlan),
+      },
+    };
+    const service = new LifePlanService(prisma as never);
+
+    await expect(
+      service.findOneByUser('user-1', 'life-plan-1'),
+    ).resolves.toEqual(lifePlan);
+    expect(prisma.lifePlan.findFirst).toHaveBeenCalledWith({
+      where: { id: 'life-plan-1', userId: 'user-1' },
+      include: { schedules: { orderBy: { startDateTime: 'asc' } } },
+    });
+  });
+
+  it('throws NotFoundException when the life plan does not belong to the user', async () => {
+    const prisma = {
+      lifePlan: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const service = new LifePlanService(prisma as never);
+
+    await expect(
+      service.findOneByUser('user-1', 'missing'),
+    ).rejects.toThrow(NotFoundException);
   });
 });

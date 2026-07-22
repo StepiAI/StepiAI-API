@@ -6,15 +6,15 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import type { Schedule, StudyPlan } from '@prisma/client';
+import type { Schedule, LifePlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoogleCalendarService } from '../google-calendar/google-calendar.service';
 import { OpenAiService } from '../openai/openai.service';
 import {
-  CreateStudyPlanFromAiDto,
-  StudyPlanConflictResult,
-  StudyPlanService,
-} from '../studyPlan/studyplan.service';
+  CreateLifePlanFromAiDto,
+  LifePlanConflictResult,
+  LifePlanService,
+} from '../lifePlan/lifeplan.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { buildScheduleInstructions } from './schedule-instructions';
 
@@ -80,40 +80,40 @@ export interface NeedsInfoMessage {
   content: string;
 }
 
-export type StudyPlanProposal = CreateStudyPlanFromAiDto & {
-  type: 'study_plan_proposal';
+export type LifePlanProposal = CreateLifePlanFromAiDto & {
+  type: 'life_plan_proposal';
 };
 
-export type StudyPlanUpdateProposal = CreateStudyPlanFromAiDto & {
-  type: 'study_plan_update_proposal';
-  studyPlanId: string;
+export type LifePlanUpdateProposal = CreateLifePlanFromAiDto & {
+  type: 'life_plan_update_proposal';
+  lifePlanId: string;
 };
 
-export interface StudyPlanAcceptedMessage {
-  type: 'study_plan_accepted';
+export interface LifePlanAcceptedMessage {
+  type: 'life_plan_accepted';
   content: string;
-  studyPlanId: string;
-  proposal: StudyPlanProposal;
+  lifePlanId: string;
+  proposal: LifePlanProposal;
 }
 
-export interface StudyPlanUpdateAcceptedMessage {
-  type: 'study_plan_update_accepted';
+export interface LifePlanUpdateAcceptedMessage {
+  type: 'life_plan_update_accepted';
   content: string;
-  studyPlanId: string;
-  proposal: StudyPlanUpdateProposal;
+  lifePlanId: string;
+  proposal: LifePlanUpdateProposal;
 }
 
-export interface StudyPlanDeleteProposal {
-  type: 'study_plan_delete_proposal';
-  studyPlanId: string;
+export interface LifePlanDeleteProposal {
+  type: 'life_plan_delete_proposal';
+  lifePlanId: string;
   title: string;
 }
 
-export interface StudyPlanDeleteAcceptedMessage {
-  type: 'study_plan_delete_accepted';
+export interface LifePlanDeleteAcceptedMessage {
+  type: 'life_plan_delete_accepted';
   content: string;
-  studyPlanId: string;
-  proposal: StudyPlanDeleteProposal;
+  lifePlanId: string;
+  proposal: LifePlanDeleteProposal;
 }
 
 export type StudyPlanConflictResolutionChoice =
@@ -138,15 +138,13 @@ type ParsedAssistantResponse =
   | ScheduleDeleteAcceptedMessage
   | AssistantMessage
   | NeedsInfoMessage
-  | StudyPlanProposal
-  | StudyPlanUpdateProposal
-  | StudyPlanConflictResult
-  | PendingStudyPlanConflictResult
-  | StudyPlanConflictResolution
-  | StudyPlanAcceptedMessage
-  | StudyPlanUpdateAcceptedMessage
-  | StudyPlanDeleteProposal
-  | StudyPlanDeleteAcceptedMessage;
+  | LifePlanProposal
+  | LifePlanUpdateProposal
+  | LifePlanConflictResult
+  | LifePlanAcceptedMessage
+  | LifePlanUpdateAcceptedMessage
+  | LifePlanDeleteProposal
+  | LifePlanDeleteAcceptedMessage;
 
 export function parseStudyPlanConflictResolution(
   content: string,
@@ -223,7 +221,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly openAiService: OpenAiService,
     private readonly googleCalendarService: GoogleCalendarService,
-    private readonly studyPlanService: StudyPlanService,
+    private readonly lifePlanService: LifePlanService,
   ) {}
 
   async getOrCreateChat(userId: string) {
@@ -369,11 +367,21 @@ export class ChatService {
     let studyPlan: StudyPlan | null = null;
     let studyPlanConflict:
       StudyPlanConflictResult | PendingStudyPlanConflictResult | null = null;
+    const isScheduleProposal = parsed.type === 'schedule_proposal';
+    let isScheduleUpdateProposal = parsed.type === 'schedule_update_proposal';
+    let isScheduleDeleteProposal = parsed.type === 'schedule_delete_proposal';
+    let isLifePlanProposal = parsed.type === 'life_plan_proposal';
+    let isLifePlanUpdateProposal =
+      parsed.type === 'life_plan_update_proposal';
+    let isLifePlanDeleteProposal =
+      parsed.type === 'life_plan_delete_proposal';
+    let lifePlan: LifePlan | null = null;
+    let lifePlanConflict: LifePlanConflictResult | null = null;
     let scheduleUpdateProposal: ScheduleUpdateProposal | undefined;
     let scheduleDeleteProposal: ScheduleDeleteProposal | undefined;
-    let studyPlanProposal: StudyPlanProposal | undefined;
-    let studyPlanUpdateProposal: StudyPlanUpdateProposal | undefined;
-    let studyPlanDeleteProposal: StudyPlanDeleteProposal | undefined;
+    let lifePlanProposal: LifePlanProposal | undefined;
+    let lifePlanUpdateProposal: LifePlanUpdateProposal | undefined;
+    let lifePlanDeleteProposal: LifePlanDeleteProposal | undefined;
 
     if (parsed.type === 'schedule_update_proposal') {
       await this.findUpdatableSchedule(userId, parsed.scheduleId);
@@ -386,41 +394,39 @@ export class ChatService {
       scheduleDeleteProposal = parsed;
     }
 
-    if (parsed.type === 'study_plan_proposal') {
-      const conflict = await this.studyPlanService.previewFromAi(
+    if (parsed.type === 'life_plan_proposal') {
+      const conflict = await this.lifePlanService.previewFromAi(
         userId,
         parsed,
       );
 
       if (conflict) {
-        const pendingConflict = { ...conflict, proposal: parsed };
-        studyPlanConflict = pendingConflict;
-        parsed = pendingConflict;
-        isStudyPlanProposal = false;
+        lifePlanConflict = conflict;
+        parsed = lifePlanConflict;
+        isLifePlanProposal = false;
       } else {
-        studyPlanProposal = parsed;
+        lifePlanProposal = parsed;
       }
     }
 
-    if (parsed.type === 'study_plan_delete_proposal') {
-      await this.studyPlanService.findForAi(userId, parsed.studyPlanId);
-      studyPlanDeleteProposal = parsed;
+    if (parsed.type === 'life_plan_delete_proposal') {
+      await this.lifePlanService.findForAi(userId, parsed.lifePlanId);
+      lifePlanDeleteProposal = parsed;
     }
 
-    if (parsed.type === 'study_plan_update_proposal') {
-      const conflict = await this.studyPlanService.previewUpdateFromAi(
+    if (parsed.type === 'life_plan_update_proposal') {
+      const conflict = await this.lifePlanService.previewUpdateFromAi(
         userId,
-        parsed.studyPlanId,
+        parsed.lifePlanId,
         parsed,
       );
 
       if (conflict) {
-        const pendingConflict = { ...conflict, proposal: parsed };
-        studyPlanConflict = pendingConflict;
-        parsed = pendingConflict;
-        isStudyPlanUpdateProposal = false;
+        lifePlanConflict = conflict;
+        parsed = lifePlanConflict;
+        isLifePlanUpdateProposal = false;
       } else {
-        studyPlanUpdateProposal = parsed;
+        lifePlanUpdateProposal = parsed;
       }
     }
 
@@ -465,16 +471,22 @@ export class ChatService {
       userMessage,
       parsed,
       assistantMessage,
-      requiresConfirmation: hasProposal,
+      requiresConfirmation:
+        isScheduleProposal ||
+        isScheduleUpdateProposal ||
+        isScheduleDeleteProposal ||
+        isLifePlanProposal ||
+        isLifePlanUpdateProposal ||
+        isLifePlanDeleteProposal,
       proposal: isScheduleProposal ? (parsed as ScheduleProposal) : undefined,
       scheduleUpdateProposal,
       scheduleDeleteProposal,
-      studyPlanProposal,
-      studyPlanUpdateProposal,
-      studyPlanDeleteProposal,
+      lifePlanProposal,
+      lifePlanUpdateProposal,
+      lifePlanDeleteProposal,
       isNeedMoreData: parsed.type === 'need_info',
-      studyPlan,
-      studyPlanConflict,
+      lifePlan,
+      lifePlanConflict,
       schedule,
     };
   }
@@ -674,9 +686,9 @@ export class ChatService {
       throw new NotFoundException('Schedule not found');
     }
 
-    if (schedule.studyPlanId) {
+    if (schedule.lifePlanId) {
       throw new BadRequestException(
-        'Use study plan update for schedules generated by a study plan',
+        'Use life plan update for schedules generated by a life plan',
       );
     }
 
@@ -1046,7 +1058,7 @@ export class ChatService {
     }
   }
 
-  async acceptStudyPlanProposal(userId: string, messageId: string) {
+  async acceptLifePlanProposal(userId: string, messageId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
       include: { chat: true },
@@ -1070,21 +1082,21 @@ export class ChatService {
       parsed = JSON.parse(message.content) as ParsedAssistantResponse;
     } catch {
       throw new BadRequestException(
-        'This message is not a study plan proposal',
+        'This message is not a life plan proposal',
       );
     }
 
-    if (parsed.type === 'study_plan_accepted') {
-      throw new ConflictException('This study plan has already been accepted');
+    if (parsed.type === 'life_plan_accepted') {
+      throw new ConflictException('This life plan has already been accepted');
     }
 
-    if (parsed.type !== 'study_plan_proposal') {
+    if (parsed.type !== 'life_plan_proposal') {
       throw new BadRequestException(
-        'This message is not a study plan proposal',
+        'This message is not a life plan proposal',
       );
     }
 
-    const result = await this.studyPlanService.createFromAi(userId, parsed);
+    const result = await this.lifePlanService.createFromAi(userId, parsed);
 
     if (!result.created) {
       const conflict = { ...result.conflict, proposal: parsed };
@@ -1096,15 +1108,15 @@ export class ChatService {
 
       return {
         created: false as const,
-        studyPlan: null,
-        studyPlanConflict: conflict,
+        lifePlan: null,
+        lifePlanConflict: result.conflict,
       };
     }
 
-    const acceptedMessage: StudyPlanAcceptedMessage = {
-      type: 'study_plan_accepted',
-      content: 'Study plan sudah dibuat.',
-      studyPlanId: result.studyPlan.id,
+    const acceptedMessage: LifePlanAcceptedMessage = {
+      type: 'life_plan_accepted',
+      content: 'Life plan sudah dibuat.',
+      lifePlanId: result.lifePlan.id,
       proposal: parsed,
     };
 
@@ -1115,12 +1127,12 @@ export class ChatService {
 
     return {
       created: true as const,
-      studyPlan: result.studyPlan,
-      studyPlanConflict: null,
+      lifePlan: result.lifePlan,
+      lifePlanConflict: null,
     };
   }
 
-  async acceptStudyPlanUpdateProposal(userId: string, messageId: string) {
+  async acceptLifePlanUpdateProposal(userId: string, messageId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
       include: { chat: true },
@@ -1144,25 +1156,25 @@ export class ChatService {
       parsed = JSON.parse(message.content) as ParsedAssistantResponse;
     } catch {
       throw new BadRequestException(
-        'This message is not a study plan update proposal',
+        'This message is not a life plan update proposal',
       );
     }
 
-    if (parsed.type === 'study_plan_update_accepted') {
+    if (parsed.type === 'life_plan_update_accepted') {
       throw new ConflictException(
-        'This study plan update has already been accepted',
+        'This life plan update has already been accepted',
       );
     }
 
-    if (parsed.type !== 'study_plan_update_proposal') {
+    if (parsed.type !== 'life_plan_update_proposal') {
       throw new BadRequestException(
-        'This message is not a study plan update proposal',
+        'This message is not a life plan update proposal',
       );
     }
 
-    const result = await this.studyPlanService.updateFromAi(
+    const result = await this.lifePlanService.updateFromAi(
       userId,
-      parsed.studyPlanId,
+      parsed.lifePlanId,
       parsed,
     );
 
@@ -1176,15 +1188,15 @@ export class ChatService {
 
       return {
         updated: false as const,
-        studyPlan: null,
-        studyPlanConflict: conflict,
+        lifePlan: null,
+        lifePlanConflict: result.conflict,
       };
     }
 
-    const acceptedMessage: StudyPlanUpdateAcceptedMessage = {
-      type: 'study_plan_update_accepted',
-      content: 'Study plan sudah di-update.',
-      studyPlanId: result.studyPlan.id,
+    const acceptedMessage: LifePlanUpdateAcceptedMessage = {
+      type: 'life_plan_update_accepted',
+      content: 'Life plan sudah di-update.',
+      lifePlanId: result.lifePlan.id,
       proposal: parsed,
     };
 
@@ -1195,12 +1207,12 @@ export class ChatService {
 
     return {
       updated: true as const,
-      studyPlan: result.studyPlan,
-      studyPlanConflict: null,
+      lifePlan: result.lifePlan,
+      lifePlanConflict: null,
     };
   }
 
-  async acceptStudyPlanDeleteProposal(userId: string, messageId: string) {
+  async acceptLifePlanDeleteProposal(userId: string, messageId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
       include: { chat: true },
@@ -1224,31 +1236,31 @@ export class ChatService {
       parsed = JSON.parse(message.content) as ParsedAssistantResponse;
     } catch {
       throw new BadRequestException(
-        'This message is not a study plan delete proposal',
+        'This message is not a life plan delete proposal',
       );
     }
 
-    if (parsed.type === 'study_plan_delete_accepted') {
+    if (parsed.type === 'life_plan_delete_accepted') {
       throw new ConflictException(
-        'This study plan delete has already been accepted',
+        'This life plan delete has already been accepted',
       );
     }
 
-    if (parsed.type !== 'study_plan_delete_proposal') {
+    if (parsed.type !== 'life_plan_delete_proposal') {
       throw new BadRequestException(
-        'This message is not a study plan delete proposal',
+        'This message is not a life plan delete proposal',
       );
     }
 
-    const studyPlan = await this.studyPlanService.deleteFromAi(
+    const lifePlan = await this.lifePlanService.deleteFromAi(
       userId,
-      parsed.studyPlanId,
+      parsed.lifePlanId,
     );
 
-    const acceptedMessage: StudyPlanDeleteAcceptedMessage = {
-      type: 'study_plan_delete_accepted',
-      content: 'Study plan sudah dihapus.',
-      studyPlanId: studyPlan.id,
+    const acceptedMessage: LifePlanDeleteAcceptedMessage = {
+      type: 'life_plan_delete_accepted',
+      content: 'Life plan sudah dihapus.',
+      lifePlanId: lifePlan.id,
       proposal: parsed,
     };
 
@@ -1259,7 +1271,7 @@ export class ChatService {
 
     return {
       deleted: true as const,
-      studyPlan,
+      lifePlan,
     };
   }
 }

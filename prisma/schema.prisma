@@ -70,13 +70,12 @@ model Schedule {
   createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   status                ScheduleStatus @default(PENDING)
-  studyPlanId           String?        @map("study_plan_id") @db.Uuid
+  lifePlanId            String?        @map("life_plan_id") @db.Uuid
+  lifePlan              LifePlan?      @relation(fields: [lifePlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
-  studyPlan             StudyPlan?     @relation(fields: [studyPlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([studyPlanId], map: "idx_schedules_study_plan_id")
+  @@index([lifePlanId], map: "idx_schedules_life_plan_id")
   @@index([userId], map: "idx_schedules_user_id")
-  @@index([study_plan_id], map: "idx_schedules_study_plan_id")
   @@map("schedules")
 }
 
@@ -91,8 +90,8 @@ model ChatProvider {
   @@map("chat_providers")
 }
 
-model StudyPlan {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+model LifePlan {
+  id               String           @id(map: "study_plans_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId           String           @map("user_id") @db.Uuid
   title            String
   goal             String
@@ -108,8 +107,8 @@ model StudyPlan {
   focusPreferences FocusPreferences @map("focus_preferences")
   schedules        Schedule[]
 
-  @@index([userId], map: "idx_study_plans_user_id")
-  @@map("study_plans")
+  @@index([userId], map: "idx_life_plans_user_id")
+  @@map("life_plans")
 }
 
 model DeviceToken {
@@ -117,57 +116,20 @@ model DeviceToken {
   userId    String   @db.Uuid
   token     String   @unique
   createdAt DateTime @default(now())
-  lastUsed  DateTime
+  lastUsed  DateTime @default(now())
 
   @@index([userId])
 }
 
-enum ScheduleStatus {
-  PENDING
-  ACCEPTED
-}
+model GeocodeCache {
+  query     String   @id
+  latitude  Float
+  longitude Float
+  label     String?
+  provider  String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-enum Weekday {
-  MONDAY
-  TUESDAY
-  WEDNESDAY
-  THURSDAY
-  FRIDAY
-  SATURDAY
-  SUNDAY
-}
-
-enum DifficultyLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
-}
-
-enum FocusPreferences {
-  DEEP_FOCUS
-  BALANCED
-  PODOMORO
-}
-
-model StudyPlan {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String           @map("user_id") @db.Uuid
-  title            String
-  goal             String
-  topics           String[]
-  startDate        DateTime         @map("start_date") @db.Date
-  endDate          DateTime         @map("end_date") @db.Date
-  availableDays    Weekday[]        @map("available_days")
-  startTime        String           @map("start_time")
-  endTime          String           @map("end_time")
-  difficultyLevel  DifficultyLevel  @map("difficulty_level")
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  focusPreferences FocusPreferences @map("focus_preferences")
-  schedules        Schedule[]
-
-  @@index([userId], map: "idx_study_plans_user_id")
-  @@map("study_plans")
+  @@map("geocode_cache")
 }
 
 model DeviceToken {
@@ -175,7 +137,7 @@ model DeviceToken {
   userId    String   @db.Uuid
   token     String   @unique
   createdAt DateTime @default(now())
-  lastUsed  DateTime
+  lastUsed  DateTime @default(now())
 
   @@index([userId])
 }
@@ -205,61 +167,4 @@ enum FocusPreferences {
   DEEP_FOCUS
   BALANCED
   PODOMORO
-}
-
-model study_plans {
-  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id           String           @db.Uuid
-  title             String
-  goal              String
-  topics            String[]
-  start_date        DateTime         @db.Date
-  end_date          DateTime         @db.Date
-  available_days    Weekday[]
-  start_time        String
-  end_time          String
-  difficulty_level  DifficultyLevel
-  created_at        DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime         @default(now()) @db.Timestamptz(6)
-  focus_preferences FocusPreferences
-  schedules         Schedule[]
-
-  @@index([user_id], map: "idx_study_plans_user_id")
-}
-
-enum ScheduleStatus {
-  PENDING
-  ACCEPTED
-}
-
-enum DifficultyLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
-}
-
-enum FocusPreferences {
-  DEEP_FOCUS
-  BALANCED
-  PODOMORO
-}
-
-enum Weekday {
-  MONDAY
-  TUESDAY
-  WEDNESDAY
-  THURSDAY
-  FRIDAY
-  SATURDAY
-  SUNDAY
-}
-
-model DeviceToken {
-  id        Int     @id @default(autoincrement())
-  userId    String  @db.Uuid
-  token     String  @unique
-  createdAt DateTime @default(now())
-  lastUsed  DateTime @updatedAt
-
-  @@index([userId])
 }

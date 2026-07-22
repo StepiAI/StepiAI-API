@@ -329,7 +329,7 @@ Never translate or alter these values.
 When all required values are available, return:
 
 {
-  "type": "study_plan_proposal",
+  "type": "life_plan_proposal",
   "title": string,
   "goal": string,
   "topic": string[],

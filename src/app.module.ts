@@ -14,6 +14,8 @@ import { WeatherModule } from './modules/weather/weather.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
+import { RoutingModule } from './modules/routing/routing.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
     NotificationsModule,
     FirebaseModule,
     ScheduleModule,
+    RoutingModule,
+    AlertsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

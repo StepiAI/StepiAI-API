@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -14,6 +16,7 @@ import { GoogleCalendarService } from './google-calendar.service';
 import { ConnectGoogleCalendarDto } from './dto/connect-google-calendar.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { CreateEventDto } from './dto/create-event.dto';
+import { RescheduleEventDto } from './dto/reschedule-event.dto';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('integrations/google-calendar')
@@ -44,6 +47,20 @@ export class GoogleCalendarController {
     @Body() dto: CreateEventDto,
   ) {
     return this.googleCalendarService.createEvent(user.id, dto);
+  }
+
+  @Patch('events/:id')
+  rescheduleEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') eventId: string,
+    @Body() dto: RescheduleEventDto,
+  ) {
+    return this.googleCalendarService.rescheduleEvent(
+      user.id,
+      eventId,
+      dto.startDateTime,
+      dto.endDateTime,
+    );
   }
 
   @Get('events')

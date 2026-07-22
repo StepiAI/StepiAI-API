@@ -76,7 +76,7 @@ export interface AssistantMessage {
 }
 
 export interface NeedsInfoMessage {
-  type: 'need_info';
+  type: 'needs_info';
   content: string;
 }
 
@@ -116,6 +116,18 @@ export interface StudyPlanDeleteAcceptedMessage {
   proposal: StudyPlanDeleteProposal;
 }
 
+export type StudyPlanConflictResolutionChoice =
+  'skip_day_and_extend' | 'change_time_for_day';
+
+export interface StudyPlanConflictResolution {
+  type: 'study_plan_conflict_resolution';
+  choice: StudyPlanConflictResolutionChoice;
+}
+
+export type PendingStudyPlanConflictResult = StudyPlanConflictResult & {
+  proposal: StudyPlanProposal | StudyPlanUpdateProposal;
+};
+
 type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleAcceptedMessage
@@ -129,10 +141,81 @@ type ParsedAssistantResponse =
   | StudyPlanProposal
   | StudyPlanUpdateProposal
   | StudyPlanConflictResult
+  | PendingStudyPlanConflictResult
+  | StudyPlanConflictResolution
   | StudyPlanAcceptedMessage
   | StudyPlanUpdateAcceptedMessage
   | StudyPlanDeleteProposal
   | StudyPlanDeleteAcceptedMessage;
+
+export function parseStudyPlanConflictResolution(
+  content: string,
+): StudyPlanConflictResolution | null {
+  const text = content.toLowerCase();
+
+  const wantsChangeTime = [
+    /\b(ganti|ubah|pindah|cari|carikan)\s+(jam|waktu)\b/,
+    /\b(jam|waktu)\s+(lain|kosong|baru)\b/,
+    /\btetap\s+(selesai|kelar|beres)\b/,
+    /\btanggal\s+(awal|semula)\b/,
+    /\b(jangan|ga|gak|nggak|tidak)\s+(usah\s+)?(di)?perpanjang\b/,
+    /\b(jangan|ga|gak|nggak|tidak)\s+memperpanjang\b/,
+  ].some((pattern) => pattern.test(text));
+
+  if (wantsChangeTime) {
+    return {
+      type: 'study_plan_conflict_resolution',
+      choice: 'change_time_for_day',
+    };
+  }
+
+  const wantsSkipAndExtend = [
+    /\b(skip|lewati)\b.*\b(bentrok|bertabrakan|tabrakan|conflict)\b/,
+    /\b(bentrok|bertabrakan|tabrakan|conflict)\b.*\b(skip|lewati)\b/,
+    /\b(di)?perpanjang\b/,
+    /\bmemperpanjang\b/,
+    /\boverload(ed)?\b/,
+    /\bterlalu\s+padat\b/,
+    /\b(jangan|ga|gak|nggak|tidak)\s+terlalu\s+padat\b/,
+    /\bterbaik\b/,
+    /\bthe\s+best\b/,
+    /\bbest\b/,
+    /\bpaling\s+(ringan|aman)\b/,
+    /\bpilih(in|kan)?\b.*\b(terbaik|ringan|aman|best)\b/,
+  ].some((pattern) => pattern.test(text));
+
+  if (wantsSkipAndExtend) {
+    return {
+      type: 'study_plan_conflict_resolution',
+      choice: 'skip_day_and_extend',
+    };
+  }
+
+  return null;
+}
+
+export function isAffirmativeReply(content: string): boolean {
+  const text = content.toLowerCase();
+
+  if (/\b(tidak|bukan|nggak|gak|ga|no|nope)\b/.test(text)) {
+    return false;
+  }
+
+  return /\b(ya|iya|yup|yes|benar|betul|correct|right|oke|ok|setuju)\b/.test(
+    text,
+  );
+}
+
+export function isProposalResponse(parsed: ParsedAssistantResponse): boolean {
+  return (
+    parsed.type === 'schedule_proposal' ||
+    parsed.type === 'schedule_update_proposal' ||
+    parsed.type === 'schedule_delete_proposal' ||
+    parsed.type === 'study_plan_proposal' ||
+    parsed.type === 'study_plan_update_proposal' ||
+    parsed.type === 'study_plan_delete_proposal'
+  );
+}
 
 @Injectable()
 export class ChatService {
@@ -204,8 +287,12 @@ export class ChatService {
       orderBy: { createdAt: 'asc' },
       include: { schedule: true },
     });
+    const studyPlans = await this.studyPlanService.findAllByUser(userId);
 
-    const conversation = history
+    const studyPlanContext = studyPlans
+      .map((studyPlan) => this.formatStudyPlanContext(studyPlan))
+      .join('\n');
+    const messageContext = history
       .map((message) => {
         const base = `${message.role}: ${message.content}`;
 
@@ -222,15 +309,26 @@ export class ChatService {
         })}`;
       })
       .join('\n');
+    const conversation = [studyPlanContext, messageContext]
+      .filter(Boolean)
+      .join('\n');
 
     let parsed: ParsedAssistantResponse;
+    const pendingStudyPlanConflict = this.findPendingStudyPlanConflict(history);
+    const directStudyPlanConflictResolution = pendingStudyPlanConflict
+      ? parseStudyPlanConflictResolution(dto.content)
+      : null;
 
     try {
-      const raw = await this.openAiService.generateText(conversation, {
-        instructions: buildScheduleInstructions(new Date(), dto.timezone),
-      });
+      if (directStudyPlanConflictResolution) {
+        parsed = directStudyPlanConflictResolution;
+      } else {
+        const raw = await this.openAiService.generateText(conversation, {
+          instructions: buildScheduleInstructions(new Date(), dto.timezone),
+        });
 
-      parsed = JSON.parse(raw) as ParsedAssistantResponse;
+        parsed = JSON.parse(raw) as ParsedAssistantResponse;
+      }
     } catch (error) {
       throw new InternalServerErrorException(
         'Unable to get a response from the AI assistant',
@@ -238,16 +336,39 @@ export class ChatService {
       );
     }
 
-    const isScheduleProposal = parsed.type === 'schedule_proposal';
-    let isScheduleUpdateProposal = parsed.type === 'schedule_update_proposal';
-    let isScheduleDeleteProposal = parsed.type === 'schedule_delete_proposal';
-    let isStudyPlanProposal = parsed.type === 'study_plan_proposal';
-    let isStudyPlanUpdateProposal =
-      parsed.type === 'study_plan_update_proposal';
-    let isStudyPlanDeleteProposal =
-      parsed.type === 'study_plan_delete_proposal';
+    if (
+      parsed.type === 'needs_info' &&
+      isAffirmativeReply(dto.content) &&
+      this.shouldRewriteAffirmativeNeedsInfo(
+        parsed.content,
+        this.findLatestNeedsInfoContent(history),
+      )
+    ) {
+      parsed = this.rewriteRepeatedAffirmativeNeedsInfo(parsed);
+    }
+
+    if (parsed.type === 'study_plan_conflict_resolution') {
+      parsed = pendingStudyPlanConflict
+        ? this.applyStudyPlanConflictResolution(
+            pendingStudyPlanConflict,
+            parsed,
+          )
+        : {
+            type: 'needs_info',
+            content:
+              'Belum ada conflict study plan yang perlu dipilih. Mau bikin study plan baru?',
+          };
+    }
+
+    let isScheduleProposal = parsed.type == 'schedule_proposal';
+    let isScheduleUpdateProposal = parsed.type == 'schedule_update_proposal';
+    let isScheduleDeleteProposal = parsed.type == 'schedule_delete_proposal';
+    let isStudyPlanProposal = parsed.type == 'study_plan_proposal';
+    let isStudyPlanUpdateProposal = parsed.type == 'study_plan_update_proposal';
+    let isStudyPlanDeleteProposal = parsed.type == 'study_plan_delete_proposal';
     let studyPlan: StudyPlan | null = null;
-    let studyPlanConflict: StudyPlanConflictResult | null = null;
+    let studyPlanConflict:
+      StudyPlanConflictResult | PendingStudyPlanConflictResult | null = null;
     let scheduleUpdateProposal: ScheduleUpdateProposal | undefined;
     let scheduleDeleteProposal: ScheduleDeleteProposal | undefined;
     let studyPlanProposal: StudyPlanProposal | undefined;
@@ -272,8 +393,9 @@ export class ChatService {
       );
 
       if (conflict) {
-        studyPlanConflict = conflict;
-        parsed = studyPlanConflict;
+        const pendingConflict = { ...conflict, proposal: parsed };
+        studyPlanConflict = pendingConflict;
+        parsed = pendingConflict;
         isStudyPlanProposal = false;
       } else {
         studyPlanProposal = parsed;
@@ -293,20 +415,23 @@ export class ChatService {
       );
 
       if (conflict) {
-        studyPlanConflict = conflict;
-        parsed = studyPlanConflict;
+        const pendingConflict = { ...conflict, proposal: parsed };
+        studyPlanConflict = pendingConflict;
+        parsed = pendingConflict;
         isStudyPlanUpdateProposal = false;
       } else {
         studyPlanUpdateProposal = parsed;
       }
     }
 
+    const hasProposal = isProposalResponse(parsed);
+
     const assistantMessage = await this.prisma.message.create({
       data: {
         chatId: chat.id,
         role: 'assistant',
         content: JSON.stringify(parsed),
-        isScheduleProposal,
+        isScheduleProposal: hasProposal,
       },
     });
 
@@ -340,20 +465,14 @@ export class ChatService {
       userMessage,
       parsed,
       assistantMessage,
-      requiresConfirmation:
-        isScheduleProposal ||
-        isScheduleUpdateProposal ||
-        isScheduleDeleteProposal ||
-        isStudyPlanProposal ||
-        isStudyPlanUpdateProposal ||
-        isStudyPlanDeleteProposal,
+      requiresConfirmation: hasProposal,
       proposal: isScheduleProposal ? (parsed as ScheduleProposal) : undefined,
       scheduleUpdateProposal,
       scheduleDeleteProposal,
       studyPlanProposal,
       studyPlanUpdateProposal,
       studyPlanDeleteProposal,
-      isNeedMoreData: parsed.type === 'need_info',
+      isNeedMoreData: parsed.type === 'needs_info',
       studyPlan,
       studyPlanConflict,
       schedule,
@@ -373,6 +492,174 @@ export class ChatService {
     if (end.getTime() <= start.getTime()) {
       throw new BadRequestException('Schedule must end after it starts');
     }
+  }
+
+  private formatStudyPlanContext(studyPlan: StudyPlan) {
+    return `study_plan_context: ${JSON.stringify({
+      studyPlanId: studyPlan.id,
+      title: studyPlan.title,
+      goal: studyPlan.goal,
+      topic: studyPlan.topics,
+      startDate: studyPlan.startDate.toISOString().slice(0, 10),
+      endDate: studyPlan.endDate.toISOString().slice(0, 10),
+      availableDays: studyPlan.availableDays,
+      startTime: studyPlan.startTime,
+      endTime: studyPlan.endTime,
+      difficultyLevel: studyPlan.difficultyLevel,
+      focusPreferences: studyPlan.focusPreferences,
+    })}`;
+  }
+
+  private findLatestNeedsInfoContent(
+    history: Array<{ role: string; content: string }>,
+  ): string | null {
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const message = history[index];
+
+      if (message.role !== 'assistant') continue;
+
+      try {
+        const parsed = JSON.parse(message.content) as Partial<NeedsInfoMessage>;
+
+        return parsed.type === 'needs_info' &&
+          typeof parsed.content === 'string'
+          ? parsed.content
+          : null;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  private rewriteRepeatedAffirmativeNeedsInfo(
+    message: NeedsInfoMessage,
+  ): NeedsInfoMessage {
+    const content = message.content.toLowerCase();
+
+    if (content.includes('study plan') && content.includes('update')) {
+      return {
+        type: 'needs_info',
+        content:
+          'Oke, perubahan waktunya sudah benar. Sekarang sebutkan study plan mana yang mau diupdate, cukup pakai judulnya.',
+      };
+    }
+
+    return {
+      type: 'needs_info',
+      content:
+        'Oke, noted. Masih ada satu detail yang kurang, bisa jawab bagian yang belum disebut?',
+    };
+  }
+
+  private shouldRewriteAffirmativeNeedsInfo(
+    currentContent: string,
+    previousContent: string | null,
+  ) {
+    if (!previousContent) return false;
+    if (currentContent === previousContent) return true;
+
+    const current = currentContent.toLowerCase();
+    const previous = previousContent.toLowerCase();
+    const isStudyPlanUpdateTargetQuestion = (content: string) =>
+      content.includes('study plan') &&
+      content.includes('update') &&
+      (content.includes('id') ||
+        content.includes('judul') ||
+        content.includes('mana'));
+
+    return (
+      isStudyPlanUpdateTargetQuestion(current) &&
+      isStudyPlanUpdateTargetQuestion(previous)
+    );
+  }
+
+  private findPendingStudyPlanConflict(
+    history: Array<{ role: string; content: string }>,
+  ): PendingStudyPlanConflictResult | null {
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const message = history[index];
+
+      if (message.role !== 'assistant') continue;
+
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(message.content);
+      } catch {
+        return null;
+      }
+
+      if (this.isPendingStudyPlanConflict(parsed)) {
+        return parsed;
+      }
+
+      return null;
+    }
+
+    return null;
+  }
+
+  private isPendingStudyPlanConflict(
+    parsed: unknown,
+  ): parsed is PendingStudyPlanConflictResult {
+    if (!parsed || typeof parsed !== 'object') return false;
+
+    const value = parsed as {
+      type?: unknown;
+      proposal?: { type?: unknown };
+    };
+
+    return (
+      value.type === 'study_plan_conflict' &&
+      (value.proposal?.type === 'study_plan_proposal' ||
+        value.proposal?.type === 'study_plan_update_proposal')
+    );
+  }
+
+  private applyStudyPlanConflictResolution(
+    conflict: PendingStudyPlanConflictResult,
+    resolution: StudyPlanConflictResolution,
+  ): StudyPlanProposal | StudyPlanUpdateProposal | NeedsInfoMessage {
+    const option = conflict.options.find(
+      (candidate) => candidate.type === resolution.choice,
+    );
+
+    if (!option) {
+      return {
+        type: 'needs_info',
+        content:
+          'Aku belum bisa menemukan pilihan itu. Mau skip yang bentrok dan diperpanjang, atau ganti jam di hari yang bentrok?',
+      };
+    }
+
+    const {
+      skippedDates: _skippedDates,
+      scheduleOverrides: _scheduleOverrides,
+      ...baseProposal
+    } = conflict.proposal;
+
+    if (resolution.choice === 'skip_day_and_extend') {
+      return {
+        ...baseProposal,
+        endDate: option.updatedEndDate ?? conflict.proposal.endDate,
+        skippedDates: option.skippedDates ?? [],
+      } as StudyPlanProposal | StudyPlanUpdateProposal;
+    }
+
+    if (!option.scheduleOverrides?.length) {
+      return {
+        type: 'needs_info',
+        content:
+          'Belum ketemu jam kosong otomatis di semua hari yang bentrok. Mau diganti ke jam berapa?',
+      };
+    }
+
+    return {
+      ...baseProposal,
+      scheduleOverrides: option.scheduleOverrides,
+    } as StudyPlanProposal | StudyPlanUpdateProposal;
   }
 
   private async findUpdatableSchedule(userId: string, scheduleId: string) {
@@ -800,15 +1087,17 @@ export class ChatService {
     const result = await this.studyPlanService.createFromAi(userId, parsed);
 
     if (!result.created) {
+      const conflict = { ...result.conflict, proposal: parsed };
+
       await this.prisma.message.update({
         where: { id: message.id },
-        data: { content: JSON.stringify(result.conflict) },
+        data: { content: JSON.stringify(conflict) },
       });
 
       return {
         created: false as const,
         studyPlan: null,
-        studyPlanConflict: result.conflict,
+        studyPlanConflict: conflict,
       };
     }
 
@@ -878,15 +1167,17 @@ export class ChatService {
     );
 
     if (!result.updated) {
+      const conflict = { ...result.conflict, proposal: parsed };
+
       await this.prisma.message.update({
         where: { id: message.id },
-        data: { content: JSON.stringify(result.conflict) },
+        data: { content: JSON.stringify(conflict) },
       });
 
       return {
         updated: false as const,
         studyPlan: null,
-        studyPlanConflict: result.conflict,
+        studyPlanConflict: conflict,
       };
     }
 

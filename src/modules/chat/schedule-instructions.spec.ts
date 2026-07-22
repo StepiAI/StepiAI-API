@@ -73,9 +73,7 @@ describe('buildScheduleInstructions', () => {
   it('larang model ngubah jam yang disebut user jadi UTC', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain(
-      'never convert the time the user said into UTC',
-    );
+    expect(instructions).toContain('Never be converted to UTC');
     expect(instructions).toContain('15:00');
   });
 
@@ -89,35 +87,59 @@ describe('buildScheduleInstructions', () => {
   it('arahin study plan supaya nanya natural dan infer field yang udah jelas', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain('If the user writes in Indonesian');
-    expect(instructions).toContain('Never mention schema names');
-    expect(instructions).toContain('infer title');
-    expect(instructions).toContain('default to "BEGINNER"');
-    expect(instructions).toContain('default to "BALANCED"');
-    expect(instructions).toContain('Tanggal 22-31');
-    expect(instructions).toContain('Never show enum lists');
-    expect(instructions).toContain('Do not say "mau pakai defaults"');
-    expect(instructions).toContain('Do not list the required fields');
+    expect(instructions).toContain('Default to natural Bahasa Indonesia');
+    expect(instructions).toContain('Avoid technical field names');
+    expect(instructions).toContain(
+      'You may infer the following when they are obvious',
+    );
+    expect(instructions).toContain('title: a short title describing the skill');
+    expect(instructions).toContain('use BEGINNER for a new skill');
+    expect(instructions).toContain('use BALANCED unless another focus style');
+    expect(instructions).toContain('Tanggal 22–31');
+    expect(instructions).toContain('Avoid enum names');
+    expect(instructions).toContain('Mau pakai default?');
+    expect(instructions).toContain('Avoid checklists');
   });
 
   it('default content user-facing ke Bahasa Indonesia', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain(
-      'For every human-facing "content" value, default to Bahasa Indonesia',
-    );
-    expect(instructions).toContain(
-      'content" should be Bahasa Indonesia by default',
-    );
+    expect(instructions).toContain('Default to natural Bahasa Indonesia');
+    expect(instructions).toContain('same language and conversational style');
+  });
+
+  it('ngarahin conflict study plan supaya pilihan best/not overloaded tidak nanya ulang', () => {
+    const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
+
+    expect(instructions).toContain('Interpret the user\'s selection by intent');
+    expect(instructions).toContain('study_plan_conflict_resolution');
+    expect(instructions).toContain('"choice": "skip_day_and_extend"');
+    expect(instructions).toContain('skip semua yang bertabrakan');
+    expect(instructions).toContain('yang terbaik buat aku/gue');
+    expect(instructions).toContain('biar gak overloaded');
+    expect(instructions).toContain('prefer skip_day_and_extend');
+    expect(instructions).toContain('Do not ask another question');
   });
 
   it('ngarahin agent buat update study plan lewat proposal update', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
+    expect(instructions).toContain('study_plan_context');
     expect(instructions).toContain('study_plan_update_proposal');
-    expect(instructions).toContain('"studyPlanId": string UUID');
-    expect(instructions).toContain('COMPLETE updated study plan payload');
-    expect(instructions).toContain('Do not apply the update directly');
+    expect(instructions).toContain('"studyPlanId": string');
+    expect(instructions).toContain('complete updated study plan');
+    expect(instructions).toContain('Never ask the user to provide the studyPlanId');
+    expect(instructions).toContain('Do not claim that the update has already been applied');
+  });
+
+  it('ngarahin needs_info supaya afirmasi tidak muter pertanyaan yang sama', () => {
+    const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
+
+    expect(instructions).toContain('Never ask the user to send an internal ID');
+    expect(instructions).toContain('Never combine a missing-information request');
+    expect(instructions).toContain('benar seperti itu');
+    expect(instructions).toContain('Do not repeat the exact same needs_info content');
+    expect(instructions).toContain('ask only which study plan by title/name');
   });
 
   it('ngarahin agent buat update schedule biasa lewat proposal update', () => {
@@ -125,9 +147,9 @@ describe('buildScheduleInstructions', () => {
 
     expect(instructions).toContain('schedule_context');
     expect(instructions).toContain('schedule_update_proposal');
-    expect(instructions).toContain('"scheduleId": string UUID');
-    expect(instructions).toContain('COMPLETE updated schedule payload');
-    expect(instructions).toContain('create or schedule a NEW event');
+    expect(instructions).toContain('"scheduleId": string');
+    expect(instructions).toContain('complete updated schedule');
+    expect(instructions).toContain('A new schedule requires');
   });
 
   it('ngarahin agent buat delete schedule dan study plan lewat proposal delete', () => {
@@ -135,8 +157,11 @@ describe('buildScheduleInstructions', () => {
 
     expect(instructions).toContain('schedule_delete_proposal');
     expect(instructions).toContain('study_plan_delete_proposal');
-    expect(instructions).toContain('"scheduleId": string UUID');
-    expect(instructions).toContain('"studyPlanId": string UUID');
-    expect(instructions).toContain('Do not delete directly');
+    expect(instructions).toContain('"scheduleId": string');
+    expect(instructions).toContain('"studyPlanId": string');
+    expect(instructions).toContain('Do not claim that the schedule has already been deleted');
+    expect(instructions).toContain(
+      'Do not claim that the study plan has already been deleted',
+    );
   });
 });

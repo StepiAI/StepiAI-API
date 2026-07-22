@@ -133,6 +133,10 @@ export type UpdateLifePlanFromAiResult =
       conflict: LifePlanConflictResult;
     };
 
+export interface LifePlanAiWriteOptions {
+  allowConflicts?: boolean;
+}
+
 export function buildLifePlanScheduleData(
   dto: Pick<
     CreateLifePlanDto,
@@ -202,6 +206,7 @@ export class LifePlanService {
   async createFromAi(
     userId: string,
     dto: CreateLifePlanFromAiDto,
+    options: LifePlanAiWriteOptions = {},
   ): Promise<CreateLifePlanFromAiResult> {
     const scheduleData = this.buildAiScheduleData(userId, dto);
     const conflict = await this.checkAiScheduleConflicts(
@@ -210,7 +215,7 @@ export class LifePlanService {
       scheduleData,
     );
 
-    if (conflict) {
+    if (conflict && !options.allowConflicts) {
       return {
         created: false,
         conflict,
@@ -241,6 +246,7 @@ export class LifePlanService {
     userId: string,
     lifePlanId: string,
     dto: CreateLifePlanFromAiDto,
+    options: LifePlanAiWriteOptions = {},
   ): Promise<UpdateLifePlanFromAiResult> {
     await this.findOwnedLifePlan(userId, lifePlanId);
 
@@ -252,7 +258,7 @@ export class LifePlanService {
       lifePlanId,
     );
 
-    if (conflict) {
+    if (conflict && !options.allowConflicts) {
       return {
         updated: false,
         conflict,
@@ -280,12 +286,7 @@ export class LifePlanService {
 
     const scheduleData = this.buildAiScheduleData(userId, dto);
 
-    return this.checkAiScheduleConflicts(
-      userId,
-      dto,
-      scheduleData,
-      lifePlanId,
-    );
+    return this.checkAiScheduleConflicts(userId, dto, scheduleData, lifePlanId);
   }
 
   async deleteFromAi(userId: string, lifePlanId: string) {
@@ -575,6 +576,7 @@ export class LifePlanService {
     const existingSchedules = await this.prisma.schedule.findMany({
       where: {
         userId,
+        status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: new Date(maxEndTime) },
         endDateTime: { gt: new Date(minStartTime) },
         ...(ignoredLifePlanId
@@ -725,6 +727,7 @@ export class LifePlanService {
     const conflict = await this.prisma.schedule.findFirst({
       where: {
         userId,
+        status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: endDateTime },
         endDateTime: { gt: startDateTime },
         ...(ignoredLifePlanId
@@ -795,6 +798,7 @@ export class LifePlanService {
     const existingSchedules = await this.prisma.schedule.findMany({
       where: {
         userId,
+        status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: searchEnd },
         endDateTime: { gt: searchStart },
         ...(ignoredLifePlanId

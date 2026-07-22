@@ -5,10 +5,7 @@ import {
   ScheduleStatus,
   Weekday,
 } from '@prisma/client';
-import {
-  buildLifePlanScheduleData,
-  LifePlanService,
-} from './lifeplan.service';
+import { buildLifePlanScheduleData, LifePlanService } from './lifeplan.service';
 
 describe('buildLifePlanScheduleData', () => {
   it('creates schedule entries for each available weekday in the requested range', () => {
@@ -176,6 +173,57 @@ describe('LifePlanService.createFromAi', () => {
       ],
     });
   });
+
+  it('creates the plan when the user explicitly allows collisions', async () => {
+    const lifePlan = {
+      id: 'life-plan-1',
+      userId: 'user-1',
+      title: 'Math prep',
+    };
+    const existingSchedule = {
+      id: 'schedule-1',
+      summary: 'Existing class',
+      startDateTime: new Date(Date.UTC(2026, 6, 20, 9, 30)),
+      endDateTime: new Date(Date.UTC(2026, 6, 20, 10, 30)),
+    };
+    const prisma = {
+      schedule: {
+        findMany: jest.fn().mockResolvedValue([existingSchedule]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      $transaction: jest.fn(async (callback) =>
+        callback({
+          lifePlan: {
+            create: jest.fn().mockResolvedValue(lifePlan),
+          },
+          schedule: {
+            createMany: jest.fn(),
+          },
+        }),
+      ),
+    };
+    const service = new LifePlanService(prisma as never);
+
+    const result = await service.createFromAi(
+      'user-1',
+      {
+        title: 'Math prep',
+        goal: 'Prepare for exam',
+        topic: ['Algebra'],
+        startDate: '2026-07-20',
+        endDate: '2026-07-20',
+        availableDays: [Weekday.MONDAY],
+        startTime: '09:00',
+        endTime: '11:00',
+        difficultyLevel: DifficultyLevel.BEGINNER,
+        focusPreferences: FocusPreferences.DEEP_FOCUS,
+      },
+      { allowConflicts: true },
+    );
+
+    expect(result).toEqual({ created: true, lifePlan });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('LifePlanService.updateFromAi', () => {
@@ -302,8 +350,8 @@ describe('LifePlanService.findOneByUser', () => {
     };
     const service = new LifePlanService(prisma as never);
 
-    await expect(
-      service.findOneByUser('user-1', 'missing'),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.findOneByUser('user-1', 'missing')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

@@ -76,7 +76,7 @@ export interface AssistantMessage {
 }
 
 export interface NeedsInfoMessage {
-  type: 'needs_info';
+  type: 'need_info';
   content: string;
 }
 
@@ -337,7 +337,7 @@ export class ChatService {
     }
 
     if (
-      parsed.type === 'needs_info' &&
+      parsed.type === 'need_info' &&
       isAffirmativeReply(dto.content) &&
       this.shouldRewriteAffirmativeNeedsInfo(
         parsed.content,
@@ -472,7 +472,7 @@ export class ChatService {
       studyPlanProposal,
       studyPlanUpdateProposal,
       studyPlanDeleteProposal,
-      isNeedMoreData: parsed.type === 'needs_info',
+      isNeedMoreData: parsed.type === 'need_info',
       studyPlan,
       studyPlanConflict,
       schedule,

@@ -13,10 +13,26 @@ import { OpenAiService } from '../openai/openai.service';
 import {
   CreateLifePlanFromAiDto,
   LifePlanConflictResult,
+  LifePlanConflictResolutionOption,
   LifePlanService,
+  buildLifePlanScheduleData,
 } from '../lifePlan/lifeplan.service';
 import { CreateMessageDto } from './dto/create-message.dto';
-import { buildScheduleInstructions } from './schedule-instructions';
+import {
+  buildScheduleInstructions,
+  normalizeTimeZone,
+} from './schedule-instructions';
+import {
+  assessScheduleCapacity,
+  explicitlyAllowsStressfulLoad,
+  isProceedAnywayReply,
+  parseConflictDecision,
+  type CapacityAssessment,
+  type ConflictDecision,
+  type TimeRange,
+} from './schedule-safety';
+
+export { isAffirmativeReply } from './schedule-safety';
 
 export interface ScheduleProposal {
   type: 'schedule_proposal';
@@ -116,18 +132,6 @@ export interface LifePlanDeleteAcceptedMessage {
   proposal: LifePlanDeleteProposal;
 }
 
-export type StudyPlanConflictResolutionChoice =
-  'skip_day_and_extend' | 'change_time_for_day';
-
-export interface StudyPlanConflictResolution {
-  type: 'study_plan_conflict_resolution';
-  choice: StudyPlanConflictResolutionChoice;
-}
-
-export type PendingStudyPlanConflictResult = StudyPlanConflictResult & {
-  proposal: StudyPlanProposal | StudyPlanUpdateProposal;
-};
-
 type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleAcceptedMessage
@@ -146,43 +150,30 @@ type ParsedAssistantResponse =
   | LifePlanDeleteProposal
   | LifePlanDeleteAcceptedMessage;
 
+export type StudyPlanConflictResolutionChoice =
+  'skip_day_and_extend' | 'change_time_for_day';
+
+export interface StudyPlanConflictResolution {
+  type: 'study_plan_conflict_resolution';
+  choice: StudyPlanConflictResolutionChoice;
+}
+
 export function parseStudyPlanConflictResolution(
   content: string,
 ): StudyPlanConflictResolution | null {
-  const text = content.toLowerCase();
+  const decision = parseConflictDecision(content);
 
-  const wantsChangeTime = [
-    /\b(ganti|ubah|pindah|cari|carikan)\s+(jam|waktu)\b/,
-    /\b(jam|waktu)\s+(lain|kosong|baru)\b/,
-    /\btetap\s+(selesai|kelar|beres)\b/,
-    /\btanggal\s+(awal|semula)\b/,
-    /\b(jangan|ga|gak|nggak|tidak)\s+(usah\s+)?(di)?perpanjang\b/,
-    /\b(jangan|ga|gak|nggak|tidak)\s+memperpanjang\b/,
-  ].some((pattern) => pattern.test(text));
-
-  if (wantsChangeTime) {
+  if (
+    decision === 'change_time_for_day' ||
+    decision === 'skip_day_and_extend'
+  ) {
     return {
       type: 'study_plan_conflict_resolution',
-      choice: 'change_time_for_day',
+      choice: decision,
     };
   }
 
-  const wantsSkipAndExtend = [
-    /\b(skip|lewati)\b.*\b(bentrok|bertabrakan|tabrakan|conflict)\b/,
-    /\b(bentrok|bertabrakan|tabrakan|conflict)\b.*\b(skip|lewati)\b/,
-    /\b(di)?perpanjang\b/,
-    /\bmemperpanjang\b/,
-    /\boverload(ed)?\b/,
-    /\bterlalu\s+padat\b/,
-    /\b(jangan|ga|gak|nggak|tidak)\s+terlalu\s+padat\b/,
-    /\bterbaik\b/,
-    /\bthe\s+best\b/,
-    /\bbest\b/,
-    /\bpaling\s+(ringan|aman)\b/,
-    /\bpilih(in|kan)?\b.*\b(terbaik|ringan|aman|best)\b/,
-  ].some((pattern) => pattern.test(text));
-
-  if (wantsSkipAndExtend) {
+  if (decision === 'ai_decides') {
     return {
       type: 'study_plan_conflict_resolution',
       choice: 'skip_day_and_extend',
@@ -192,27 +183,19 @@ export function parseStudyPlanConflictResolution(
   return null;
 }
 
-export function isAffirmativeReply(content: string): boolean {
-  const text = content.toLowerCase();
-
-  if (/\b(tidak|bukan|nggak|gak|ga|no|nope)\b/.test(text)) {
-    return false;
-  }
-
-  return /\b(ya|iya|yup|yes|benar|betul|correct|right|oke|ok|setuju)\b/.test(
-    text,
-  );
-}
-
-export function isProposalResponse(parsed: ParsedAssistantResponse): boolean {
-  return (
-    parsed.type === 'schedule_proposal' ||
-    parsed.type === 'schedule_update_proposal' ||
-    parsed.type === 'schedule_delete_proposal' ||
-    parsed.type === 'study_plan_proposal' ||
-    parsed.type === 'study_plan_update_proposal' ||
-    parsed.type === 'study_plan_delete_proposal'
-  );
+export function isProposalResponse(parsed: { type: string }): boolean {
+  return [
+    'schedule_proposal',
+    'schedule_update_proposal',
+    'schedule_delete_proposal',
+    'life_plan_proposal',
+    'life_plan_update_proposal',
+    'life_plan_delete_proposal',
+    // Accepted here only for backward compatibility with older stored chats.
+    'study_plan_proposal',
+    'study_plan_update_proposal',
+    'study_plan_delete_proposal',
+  ].includes(parsed.type);
 }
 
 @Injectable()
@@ -271,6 +254,7 @@ export class ChatService {
 
   async sendMessage(userId: string, dto: CreateMessageDto) {
     const chat = await this.findOrCreateChatRecord(userId);
+    const now = new Date();
 
     const userMessage = await this.prisma.message.create({
       data: {
@@ -280,15 +264,34 @@ export class ChatService {
       },
     });
 
-    const history = await this.prisma.message.findMany({
-      where: { chatId: chat.id },
-      orderBy: { createdAt: 'asc' },
-      include: { schedule: true },
-    });
-    const studyPlans = await this.studyPlanService.findAllByUser(userId);
+    const [history, currentSchedules, lifePlans] = await Promise.all([
+      this.prisma.message.findMany({
+        where: { chatId: chat.id },
+        orderBy: { createdAt: 'asc' },
+        include: { schedule: true },
+      }),
+      this.prisma.schedule.findMany({
+        where: {
+          userId,
+          status: 'ACCEPTED',
+          endDateTime: {
+            gt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+          },
+          startDateTime: {
+            lt: new Date(now.getTime() + 366 * 24 * 60 * 60 * 1000),
+          },
+        },
+        orderBy: { startDateTime: 'asc' },
+        take: 300,
+      }),
+      this.lifePlanService.findAllByUser(userId),
+    ]);
 
-    const studyPlanContext = studyPlans
-      .map((studyPlan) => this.formatStudyPlanContext(studyPlan))
+    const lifePlanContext = lifePlans
+      .map((lifePlan) => this.formatLifePlanContext(lifePlan))
+      .join('\n');
+    const calendarContext = currentSchedules
+      .map((schedule) => this.formatCalendarContext(schedule))
       .join('\n');
     const messageContext = history
       .map((message) => {
@@ -307,26 +310,18 @@ export class ChatService {
         })}`;
       })
       .join('\n');
-    const conversation = [studyPlanContext, messageContext]
+    const conversation = [lifePlanContext, calendarContext, messageContext]
       .filter(Boolean)
       .join('\n');
 
     let parsed: ParsedAssistantResponse;
-    const pendingStudyPlanConflict = this.findPendingStudyPlanConflict(history);
-    const directStudyPlanConflictResolution = pendingStudyPlanConflict
-      ? parseStudyPlanConflictResolution(dto.content)
-      : null;
 
     try {
-      if (directStudyPlanConflictResolution) {
-        parsed = directStudyPlanConflictResolution;
-      } else {
-        const raw = await this.openAiService.generateText(conversation, {
-          instructions: buildScheduleInstructions(new Date(), dto.timezone),
-        });
+      const raw = await this.openAiService.generateText(conversation, {
+        instructions: buildScheduleInstructions(now, dto.timezone),
+      });
 
-        parsed = JSON.parse(raw) as ParsedAssistantResponse;
-      }
+      parsed = this.normalizeAssistantResponse(JSON.parse(raw));
     } catch (error) {
       throw new InternalServerErrorException(
         'Unable to get a response from the AI assistant',
@@ -334,59 +329,136 @@ export class ChatService {
       );
     }
 
-    if (
-      parsed.type === 'need_info' &&
-      isAffirmativeReply(dto.content) &&
-      this.shouldRewriteAffirmativeNeedsInfo(
-        parsed.content,
-        this.findLatestNeedsInfoContent(history),
-      )
-    ) {
-      parsed = this.rewriteRepeatedAffirmativeNeedsInfo(parsed);
-    }
-
-    if (parsed.type === 'study_plan_conflict_resolution') {
-      parsed = pendingStudyPlanConflict
-        ? this.applyStudyPlanConflictResolution(
-            pendingStudyPlanConflict,
-            parsed,
-          )
-        : {
-            type: 'needs_info',
-            content:
-              'Belum ada conflict study plan yang perlu dipilih. Mau bikin study plan baru?',
-          };
-    }
-
-    let isScheduleProposal = parsed.type == 'schedule_proposal';
-    let isScheduleUpdateProposal = parsed.type == 'schedule_update_proposal';
-    let isScheduleDeleteProposal = parsed.type == 'schedule_delete_proposal';
-    let isStudyPlanProposal = parsed.type == 'study_plan_proposal';
-    let isStudyPlanUpdateProposal = parsed.type == 'study_plan_update_proposal';
-    let isStudyPlanDeleteProposal = parsed.type == 'study_plan_delete_proposal';
-    let studyPlan: StudyPlan | null = null;
-    let studyPlanConflict:
-      StudyPlanConflictResult | PendingStudyPlanConflictResult | null = null;
-    const isScheduleProposal = parsed.type === 'schedule_proposal';
+    let isScheduleProposal = parsed.type === 'schedule_proposal';
     let isScheduleUpdateProposal = parsed.type === 'schedule_update_proposal';
-    let isScheduleDeleteProposal = parsed.type === 'schedule_delete_proposal';
+    const isScheduleDeleteProposal = parsed.type === 'schedule_delete_proposal';
     let isLifePlanProposal = parsed.type === 'life_plan_proposal';
-    let isLifePlanUpdateProposal =
-      parsed.type === 'life_plan_update_proposal';
-    let isLifePlanDeleteProposal =
+    let isLifePlanUpdateProposal = parsed.type === 'life_plan_update_proposal';
+    const isLifePlanDeleteProposal =
       parsed.type === 'life_plan_delete_proposal';
-    let lifePlan: LifePlan | null = null;
+    const lifePlan: LifePlan | null = null;
     let lifePlanConflict: LifePlanConflictResult | null = null;
     let scheduleUpdateProposal: ScheduleUpdateProposal | undefined;
     let scheduleDeleteProposal: ScheduleDeleteProposal | undefined;
     let lifePlanProposal: LifePlanProposal | undefined;
     let lifePlanUpdateProposal: LifePlanUpdateProposal | undefined;
     let lifePlanDeleteProposal: LifePlanDeleteProposal | undefined;
+    const latestNeedInfo = this.findLatestNeedsInfoContent(history);
+    const priorSafetyOverrides = this.findConfirmedSafetyOverrides(history);
+    const proceedsAfterWarning = isProceedAnywayReply(dto.content);
+    const conflictDecision =
+      parseConflictDecision(dto.content) ??
+      (proceedsAfterWarning && latestNeedInfo?.toLowerCase().includes('bentrok')
+        ? 'allow_collision'
+        : priorSafetyOverrides.allowCollision
+          ? 'allow_collision'
+          : null);
+    const allowsStressfulLoad =
+      explicitlyAllowsStressfulLoad(dto.content) ||
+      priorSafetyOverrides.allowStressfulLoad ||
+      (proceedsAfterWarning &&
+        Boolean(
+          latestNeedInfo
+            ?.toLowerCase()
+            .match(/berpotensi cukup berat|beban ini|terlalu padat/),
+        ));
+    const timeZone = normalizeTimeZone(dto.timezone);
 
-    if (parsed.type === 'schedule_update_proposal') {
-      await this.findUpdatableSchedule(userId, parsed.scheduleId);
+    if (
+      parsed.type === 'schedule_proposal' ||
+      parsed.type === 'schedule_update_proposal'
+    ) {
       this.validateScheduleProposalTime(parsed);
-      scheduleUpdateProposal = parsed;
+      const ignoredScheduleId =
+        parsed.type === 'schedule_update_proposal'
+          ? parsed.scheduleId
+          : undefined;
+
+      if (ignoredScheduleId) {
+        await this.findUpdatableSchedule(userId, ignoredScheduleId);
+      }
+
+      let proposal: ScheduleProposal | ScheduleUpdateProposal = parsed;
+      let collisions = this.findScheduleCollisions(
+        currentSchedules,
+        proposal,
+        ignoredScheduleId,
+      );
+
+      const hasSpecificTimeInReply =
+        /\b(?:[01]?\d|2[0-3])(?::|\.)[0-5]\d\b|\b(?:[1-9]|1[0-2])\s*(?:am|pm)\b/i.test(
+          dto.content,
+        );
+      const shouldChooseFreeTime =
+        conflictDecision === 'ai_decides' ||
+        (conflictDecision === 'change_time_for_day' && !hasSpecificTimeInReply);
+
+      if (collisions.length > 0 && shouldChooseFreeTime) {
+        const saferProposal = this.findSaferScheduleProposal(
+          proposal,
+          currentSchedules,
+          timeZone,
+          ignoredScheduleId,
+        );
+
+        if (saferProposal) {
+          proposal = saferProposal;
+          collisions = this.findScheduleCollisions(
+            currentSchedules,
+            proposal,
+            ignoredScheduleId,
+          );
+        }
+      }
+
+      if (collisions.length > 0 && conflictDecision !== 'allow_collision') {
+        parsed = this.buildScheduleCollisionNeedInfo(proposal, collisions);
+        isScheduleProposal = false;
+        isScheduleUpdateProposal = false;
+      } else {
+        const existingForCapacity = currentSchedules.filter(
+          (schedule) => schedule.id !== ignoredScheduleId,
+        );
+        let capacity = assessScheduleCapacity(
+          existingForCapacity,
+          [this.toTimeRange(proposal)],
+          timeZone,
+        );
+
+        if (
+          capacity.isPotentiallyStressful &&
+          conflictDecision === 'ai_decides'
+        ) {
+          const saferProposal = this.findSaferScheduleProposal(
+            proposal,
+            currentSchedules,
+            timeZone,
+            ignoredScheduleId,
+            true,
+          );
+
+          if (saferProposal) {
+            proposal = saferProposal;
+            capacity = assessScheduleCapacity(
+              existingForCapacity,
+              [this.toTimeRange(proposal)],
+              timeZone,
+            );
+          }
+        }
+
+        if (capacity.isPotentiallyStressful && !allowsStressfulLoad) {
+          parsed = this.buildCapacityNeedInfo(capacity);
+          isScheduleProposal = false;
+          isScheduleUpdateProposal = false;
+        } else {
+          parsed = proposal;
+
+          if (proposal.type === 'schedule_update_proposal') {
+            scheduleUpdateProposal = proposal;
+          }
+        }
+      }
     }
 
     if (parsed.type === 'schedule_delete_proposal') {
@@ -395,18 +467,20 @@ export class ChatService {
     }
 
     if (parsed.type === 'life_plan_proposal') {
-      const conflict = await this.lifePlanService.previewFromAi(
+      const evaluated = await this.evaluateLifePlanProposal(
         userId,
         parsed,
+        currentSchedules,
+        timeZone,
+        conflictDecision,
+        allowsStressfulLoad,
       );
-
-      if (conflict) {
-        lifePlanConflict = conflict;
-        parsed = lifePlanConflict;
-        isLifePlanProposal = false;
-      } else {
-        lifePlanProposal = parsed;
-      }
+      parsed = evaluated.parsed;
+      lifePlanConflict = evaluated.conflict;
+      isLifePlanProposal = evaluated.canConfirm;
+      lifePlanProposal = evaluated.canConfirm
+        ? (evaluated.parsed as LifePlanProposal)
+        : undefined;
     }
 
     if (parsed.type === 'life_plan_delete_proposal') {
@@ -415,29 +489,34 @@ export class ChatService {
     }
 
     if (parsed.type === 'life_plan_update_proposal') {
-      const conflict = await this.lifePlanService.previewUpdateFromAi(
+      const evaluated = await this.evaluateLifePlanProposal(
         userId,
-        parsed.lifePlanId,
         parsed,
+        currentSchedules,
+        timeZone,
+        conflictDecision,
+        allowsStressfulLoad,
       );
-
-      if (conflict) {
-        lifePlanConflict = conflict;
-        parsed = lifePlanConflict;
-        isLifePlanUpdateProposal = false;
-      } else {
-        lifePlanUpdateProposal = parsed;
-      }
+      parsed = evaluated.parsed;
+      lifePlanConflict = evaluated.conflict;
+      isLifePlanUpdateProposal = evaluated.canConfirm;
+      lifePlanUpdateProposal = evaluated.canConfirm
+        ? (evaluated.parsed as LifePlanUpdateProposal)
+        : undefined;
     }
-
-    const hasProposal = isProposalResponse(parsed);
 
     const assistantMessage = await this.prisma.message.create({
       data: {
         chatId: chat.id,
         role: 'assistant',
         content: JSON.stringify(parsed),
-        isScheduleProposal: hasProposal,
+        isScheduleProposal:
+          isScheduleProposal ||
+          isScheduleUpdateProposal ||
+          isScheduleDeleteProposal ||
+          isLifePlanProposal ||
+          isLifePlanUpdateProposal ||
+          isLifePlanDeleteProposal,
       },
     });
 
@@ -491,35 +570,48 @@ export class ChatService {
     };
   }
 
-  private validateScheduleProposalTime(
-    proposal: ScheduleProposal | ScheduleUpdateProposal,
-  ) {
-    const start = new Date(proposal.startDateTime);
-    const end = new Date(proposal.endDateTime);
-
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException('Schedule proposal has invalid date/time');
+  private normalizeAssistantResponse(value: unknown): ParsedAssistantResponse {
+    if (!value || typeof value !== 'object') {
+      throw new Error('AI response must be a JSON object');
     }
 
-    if (end.getTime() <= start.getTime()) {
-      throw new BadRequestException('Schedule must end after it starts');
-    }
-  }
+    const response = { ...(value as Record<string, unknown>) };
+    const typeAliases: Record<string, string> = {
+      needs_info: 'need_info',
+      study_plan_proposal: 'life_plan_proposal',
+      study_plan_update_proposal: 'life_plan_update_proposal',
+      study_plan_delete_proposal: 'life_plan_delete_proposal',
+    };
 
-  private formatStudyPlanContext(studyPlan: StudyPlan) {
-    return `study_plan_context: ${JSON.stringify({
-      studyPlanId: studyPlan.id,
-      title: studyPlan.title,
-      goal: studyPlan.goal,
-      topic: studyPlan.topics,
-      startDate: studyPlan.startDate.toISOString().slice(0, 10),
-      endDate: studyPlan.endDate.toISOString().slice(0, 10),
-      availableDays: studyPlan.availableDays,
-      startTime: studyPlan.startTime,
-      endTime: studyPlan.endTime,
-      difficultyLevel: studyPlan.difficultyLevel,
-      focusPreferences: studyPlan.focusPreferences,
-    })}`;
+    if (typeof response.type === 'string' && typeAliases[response.type]) {
+      response.type = typeAliases[response.type];
+    }
+
+    if (
+      response.studyPlanId &&
+      !response.lifePlanId &&
+      typeof response.studyPlanId === 'string'
+    ) {
+      response.lifePlanId = response.studyPlanId;
+      delete response.studyPlanId;
+    }
+
+    const allowedTypes = new Set([
+      'schedule_proposal',
+      'schedule_update_proposal',
+      'schedule_delete_proposal',
+      'message',
+      'need_info',
+      'life_plan_proposal',
+      'life_plan_update_proposal',
+      'life_plan_delete_proposal',
+    ]);
+
+    if (typeof response.type !== 'string' || !allowedTypes.has(response.type)) {
+      throw new Error(`Unsupported AI response type: ${String(response.type)}`);
+    }
+
+    return response as unknown as ParsedAssistantResponse;
   }
 
   private findLatestNeedsInfoContent(
@@ -533,8 +625,7 @@ export class ChatService {
       try {
         const parsed = JSON.parse(message.content) as Partial<NeedsInfoMessage>;
 
-        return parsed.type === 'needs_info' &&
-          typeof parsed.content === 'string'
+        return parsed.type === 'need_info' && typeof parsed.content === 'string'
           ? parsed.content
           : null;
       } catch {
@@ -545,133 +636,487 @@ export class ChatService {
     return null;
   }
 
-  private rewriteRepeatedAffirmativeNeedsInfo(
-    message: NeedsInfoMessage,
-  ): NeedsInfoMessage {
-    const content = message.content.toLowerCase();
+  private findConfirmedSafetyOverrides(
+    history: Array<{ role: string; content: string }>,
+  ) {
+    let allowCollision = false;
+    let allowStressfulLoad = false;
+    let pendingWarning: 'collision' | 'capacity' | null = null;
 
-    if (content.includes('study plan') && content.includes('update')) {
-      return {
-        type: 'needs_info',
-        content:
-          'Oke, perubahan waktunya sudah benar. Sekarang sebutkan study plan mana yang mau diupdate, cukup pakai judulnya.',
-      };
+    for (const message of history) {
+      if (message.role === 'assistant') {
+        try {
+          const parsed = JSON.parse(
+            message.content,
+          ) as Partial<NeedsInfoMessage>;
+
+          if (
+            parsed.type !== 'need_info' ||
+            typeof parsed.content !== 'string'
+          ) {
+            allowCollision = false;
+            allowStressfulLoad = false;
+            pendingWarning = null;
+            continue;
+          }
+
+          const content = parsed.content.toLowerCase();
+          pendingWarning = content.includes('bentrok')
+            ? 'collision'
+            : /berpotensi cukup berat|beban ini|terlalu padat/.test(content)
+              ? 'capacity'
+              : null;
+        } catch {
+          allowCollision = false;
+          allowStressfulLoad = false;
+          pendingWarning = null;
+        }
+
+        continue;
+      }
+
+      if (message.role !== 'user' || !pendingWarning) continue;
+
+      if (
+        pendingWarning === 'collision' &&
+        (parseConflictDecision(message.content) === 'allow_collision' ||
+          isProceedAnywayReply(message.content))
+      ) {
+        allowCollision = true;
+      }
+
+      if (
+        pendingWarning === 'capacity' &&
+        (explicitlyAllowsStressfulLoad(message.content) ||
+          isProceedAnywayReply(message.content))
+      ) {
+        allowStressfulLoad = true;
+      }
+
+      pendingWarning = null;
     }
 
+    return { allowCollision, allowStressfulLoad };
+  }
+
+  private formatLifePlanContext(lifePlan: LifePlan) {
+    return `life_plan_context: ${JSON.stringify({
+      lifePlanId: lifePlan.id,
+      title: lifePlan.title,
+      goal: lifePlan.goal,
+      topic: lifePlan.topics,
+      startDate: lifePlan.startDate.toISOString().slice(0, 10),
+      endDate: lifePlan.endDate.toISOString().slice(0, 10),
+      availableDays: lifePlan.availableDays,
+      startTime: lifePlan.startTime,
+      endTime: lifePlan.endTime,
+      difficultyLevel: lifePlan.difficultyLevel,
+      focusPreferences: lifePlan.focusPreferences,
+    })}`;
+  }
+
+  private formatCalendarContext(schedule: Schedule) {
+    return `calendar_context: ${JSON.stringify({
+      scheduleId: schedule.id,
+      status: schedule.status,
+      summary: schedule.summary,
+      description: schedule.description,
+      location: schedule.location,
+      startDateTime: schedule.startDateTime.toISOString(),
+      endDateTime: schedule.endDateTime.toISOString(),
+      lifePlanId: schedule.lifePlanId,
+    })}`;
+  }
+
+  private toTimeRange(
+    proposal: ScheduleProposal | ScheduleUpdateProposal,
+  ): TimeRange {
     return {
-      type: 'needs_info',
-      content:
-        'Oke, noted. Masih ada satu detail yang kurang, bisa jawab bagian yang belum disebut?',
+      startDateTime: new Date(proposal.startDateTime),
+      endDateTime: new Date(proposal.endDateTime),
     };
   }
 
-  private shouldRewriteAffirmativeNeedsInfo(
-    currentContent: string,
-    previousContent: string | null,
+  private findScheduleCollisions(
+    schedules: Schedule[],
+    proposal: ScheduleProposal | ScheduleUpdateProposal,
+    ignoredScheduleId?: string,
   ) {
-    if (!previousContent) return false;
-    if (currentContent === previousContent) return true;
+    const proposed = this.toTimeRange(proposal);
 
-    const current = currentContent.toLowerCase();
-    const previous = previousContent.toLowerCase();
-    const isStudyPlanUpdateTargetQuestion = (content: string) =>
-      content.includes('study plan') &&
-      content.includes('update') &&
-      (content.includes('id') ||
-        content.includes('judul') ||
-        content.includes('mana'));
-
-    return (
-      isStudyPlanUpdateTargetQuestion(current) &&
-      isStudyPlanUpdateTargetQuestion(previous)
+    return schedules.filter(
+      (schedule) =>
+        schedule.id !== ignoredScheduleId &&
+        proposed.startDateTime.getTime() < schedule.endDateTime.getTime() &&
+        proposed.endDateTime.getTime() > schedule.startDateTime.getTime(),
     );
   }
 
-  private findPendingStudyPlanConflict(
-    history: Array<{ role: string; content: string }>,
-  ): PendingStudyPlanConflictResult | null {
-    for (let index = history.length - 1; index >= 0; index -= 1) {
-      const message = history[index];
+  private buildScheduleCollisionNeedInfo(
+    proposal: ScheduleProposal | ScheduleUpdateProposal,
+    collisions: Schedule[],
+  ): NeedsInfoMessage {
+    const names = collisions
+      .slice(0, 3)
+      .map((schedule) => `“${schedule.summary}”`)
+      .join(', ');
 
-      if (message.role !== 'assistant') continue;
+    return {
+      type: 'need_info',
+      content: `Jadwal ${proposal.summary} bentrok dengan ${names}. Mau ganti jam, batal/skip jadwal ini, tetap dibuat meski bentrok, atau biar aku pilihkan waktu yang aman?`,
+    };
+  }
 
-      let parsed: unknown;
+  private buildLifePlanCollisionNeedInfo(
+    conflict: LifePlanConflictResult,
+  ): NeedsInfoMessage {
+    const dates = conflict.conflicts
+      .slice(0, 4)
+      .map((item) => item.date)
+      .join(', ');
+    const suffix = conflict.conflicts.length > 4 ? ', dan lainnya' : '';
 
-      try {
-        parsed = JSON.parse(message.content);
-      } catch {
-        return null;
+    return {
+      type: 'need_info',
+      content: `Ada sesi study plan yang bentrok pada ${dates}${suffix}. Mau ubah jam di tanggal itu, skip tanggal yang bentrok, tetap lanjut meski bentrok, atau bilang “bebas” supaya aku pilihkan yang paling aman?`,
+    };
+  }
+
+  private buildCapacityNeedInfo(
+    capacity: CapacityAssessment,
+  ): NeedsInfoMessage {
+    const hours = Math.round((capacity.busiestMinutes / 60) * 10) / 10;
+    const datePart = capacity.busiestDate
+      ? ` pada ${capacity.busiestDate}`
+      : '';
+
+    return {
+      type: 'need_info',
+      content: `Jadwal ini berpotensi cukup berat${datePart} (sekitar ${hours} jam terjadwal). Mau diringankan, biar aku pilihkan waktu yang lebih aman, atau tetap lanjut karena kamu oke dengan beban ini?`,
+    };
+  }
+
+  private findSaferScheduleProposal<
+    T extends ScheduleProposal | ScheduleUpdateProposal,
+  >(
+    proposal: T,
+    schedules: Schedule[],
+    timeZone: string,
+    ignoredScheduleId?: string,
+    forceDifferentDay = false,
+  ): T | null {
+    const start = new Date(proposal.startDateTime);
+    const duration = new Date(proposal.endDateTime).getTime() - start.getTime();
+    const existing = schedules.filter(
+      (schedule) => schedule.id !== ignoredScheduleId,
+    );
+
+    for (let step = 1; step <= 7 * 48; step += 1) {
+      const candidateStart = new Date(start.getTime() + step * 30 * 60_000);
+      const candidateEnd = new Date(candidateStart.getTime() + duration);
+      const localHour = Number(
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone,
+          hour: '2-digit',
+          hour12: false,
+        }).format(candidateStart),
+      );
+      const localEndHour = Number(
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone,
+          hour: '2-digit',
+          hour12: false,
+        }).format(candidateEnd),
+      );
+
+      if (localHour < 7 || localEndHour > 22 || localEndHour < 7) continue;
+
+      const candidate = {
+        ...proposal,
+        startDateTime: this.formatDateTimeInZone(candidateStart, timeZone),
+        endDateTime: this.formatDateTimeInZone(candidateEnd, timeZone),
+      };
+      const hasCollision = this.findScheduleCollisions(
+        existing,
+        candidate,
+      ).length;
+
+      if (hasCollision) continue;
+
+      if (forceDifferentDay) {
+        const capacity = assessScheduleCapacity(
+          existing,
+          [this.toTimeRange(candidate)],
+          timeZone,
+        );
+
+        if (capacity.isPotentiallyStressful) continue;
       }
 
-      if (this.isPendingStudyPlanConflict(parsed)) {
-        return parsed;
-      }
-
-      return null;
+      return candidate;
     }
 
     return null;
   }
 
-  private isPendingStudyPlanConflict(
-    parsed: unknown,
-  ): parsed is PendingStudyPlanConflictResult {
-    if (!parsed || typeof parsed !== 'object') return false;
+  private formatDateTimeInZone(value: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZoneName: 'longOffset',
+    }).formatToParts(value);
+    const get = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    const offset = get('timeZoneName').replace('GMT', '') || '+00:00';
 
-    const value = parsed as {
-      type?: unknown;
-      proposal?: { type?: unknown };
-    };
-
-    return (
-      value.type === 'study_plan_conflict' &&
-      (value.proposal?.type === 'study_plan_proposal' ||
-        value.proposal?.type === 'study_plan_update_proposal')
-    );
+    return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get(
+      'minute',
+    )}:${get('second')}${offset}`;
   }
 
-  private applyStudyPlanConflictResolution(
-    conflict: PendingStudyPlanConflictResult,
-    resolution: StudyPlanConflictResolution,
-  ): StudyPlanProposal | StudyPlanUpdateProposal | NeedsInfoMessage {
-    const option = conflict.options.find(
-      (candidate) => candidate.type === resolution.choice,
-    );
+  private async evaluateLifePlanProposal(
+    userId: string,
+    proposal: LifePlanProposal | LifePlanUpdateProposal,
+    currentSchedules: Schedule[],
+    timeZone: string,
+    decision: ConflictDecision | null,
+    allowsStressfulLoad: boolean,
+  ): Promise<{
+    parsed: LifePlanProposal | LifePlanUpdateProposal | NeedsInfoMessage;
+    conflict: LifePlanConflictResult | null;
+    canConfirm: boolean;
+  }> {
+    const preview = (candidate: LifePlanProposal | LifePlanUpdateProposal) =>
+      candidate.type === 'life_plan_update_proposal'
+        ? this.lifePlanService.previewUpdateFromAi(
+            userId,
+            candidate.lifePlanId,
+            candidate,
+          )
+        : this.lifePlanService.previewFromAi(userId, candidate);
+    let candidate = proposal;
+    let conflict = await preview(candidate);
 
-    if (!option) {
+    if (conflict && decision !== 'allow_collision') {
+      const resolution =
+        decision === 'ai_decides' ? 'skip_day_and_extend' : decision;
+
+      if (
+        resolution === 'skip_day_and_extend' ||
+        resolution === 'change_time_for_day'
+      ) {
+        const resolved = this.applyLifePlanConflictOption(
+          candidate,
+          conflict,
+          resolution,
+        );
+
+        if (resolved) {
+          candidate = resolved;
+          conflict = await preview(candidate);
+        }
+      }
+    }
+
+    if (conflict && decision !== 'allow_collision') {
       return {
-        type: 'needs_info',
-        content:
-          'Aku belum bisa menemukan pilihan itu. Mau skip yang bentrok dan diperpanjang, atau ganti jam di hari yang bentrok?',
+        parsed: this.buildLifePlanCollisionNeedInfo(conflict),
+        conflict,
+        canConfirm: false,
       };
     }
 
-    const {
-      skippedDates: _skippedDates,
-      scheduleOverrides: _scheduleOverrides,
-      ...baseProposal
-    } = conflict.proposal;
+    const ignoredLifePlanId =
+      candidate.type === 'life_plan_update_proposal'
+        ? candidate.lifePlanId
+        : undefined;
+    const existingForCapacity = currentSchedules.filter(
+      (schedule) => schedule.lifePlanId !== ignoredLifePlanId,
+    );
+    let capacity = assessScheduleCapacity(
+      existingForCapacity,
+      this.buildLifePlanTimeRanges(candidate, userId),
+      timeZone,
+    );
 
-    if (resolution.choice === 'skip_day_and_extend') {
-      return {
-        ...baseProposal,
-        endDate: option.updatedEndDate ?? conflict.proposal.endDate,
-        skippedDates: option.skippedDates ?? [],
-      } as StudyPlanProposal | StudyPlanUpdateProposal;
+    if (capacity.isPotentiallyStressful && decision === 'ai_decides') {
+      const lighter = this.buildLighterLifePlanProposal(
+        candidate,
+        userId,
+        existingForCapacity,
+        timeZone,
+      );
+
+      if (lighter) {
+        candidate = lighter;
+        capacity = assessScheduleCapacity(
+          existingForCapacity,
+          this.buildLifePlanTimeRanges(candidate, userId),
+          timeZone,
+        );
+      }
     }
 
-    if (!option.scheduleOverrides?.length) {
+    if (capacity.isPotentiallyStressful && !allowsStressfulLoad) {
       return {
-        type: 'needs_info',
-        content:
-          'Belum ketemu jam kosong otomatis di semua hari yang bentrok. Mau diganti ke jam berapa?',
+        parsed: this.buildCapacityNeedInfo(capacity),
+        conflict: null,
+        canConfirm: false,
+      };
+    }
+
+    return { parsed: candidate, conflict: null, canConfirm: true };
+  }
+
+  private buildLighterLifePlanProposal<
+    T extends LifePlanProposal | LifePlanUpdateProposal,
+  >(
+    proposal: T,
+    userId: string,
+    existing: Schedule[],
+    timeZone: string,
+  ): T | null {
+    const [startHour, startMinute] = proposal.startTime.split(':').map(Number);
+    const [endHour, endMinute] = proposal.endTime.split(':').map(Number);
+    const duration = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+    let candidate: T = proposal;
+
+    if (duration > 2 * 60) {
+      const lighterEnd = startHour * 60 + startMinute + 2 * 60;
+      candidate = {
+        ...candidate,
+        endTime: `${String(Math.floor(lighterEnd / 60)).padStart(2, '0')}:${String(
+          lighterEnd % 60,
+        ).padStart(2, '0')}`,
+      };
+    }
+
+    const originalRanges = this.buildLifePlanTimeRanges(candidate, userId);
+    const skippedDates = new Set(candidate.skippedDates ?? []);
+    let remaining = originalRanges;
+
+    for (let attempts = 0; attempts < originalRanges.length; attempts += 1) {
+      const capacity = assessScheduleCapacity(existing, remaining, timeZone);
+
+      if (!capacity.isPotentiallyStressful) {
+        return remaining.length > 0
+          ? { ...candidate, skippedDates: [...skippedDates] }
+          : null;
+      }
+
+      if (!capacity.busiestDate) return null;
+
+      const matching = remaining.find(
+        (range) =>
+          this.dateKeyInTimeZone(range.startDateTime, timeZone) ===
+          capacity.busiestDate,
+      );
+
+      if (!matching) return null;
+
+      skippedDates.add(matching.startDateTime.toISOString().slice(0, 10));
+      remaining = remaining.filter((range) => range !== matching);
+    }
+
+    return null;
+  }
+
+  private dateKeyInTimeZone(value: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(value);
+    const get = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? '';
+
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  }
+
+  private applyLifePlanConflictOption<
+    T extends LifePlanProposal | LifePlanUpdateProposal,
+  >(
+    proposal: T,
+    conflict: LifePlanConflictResult,
+    choice: 'skip_day_and_extend' | 'change_time_for_day',
+  ): T | null {
+    const option: LifePlanConflictResolutionOption | undefined =
+      conflict.options.find((candidate) => candidate.type === choice);
+
+    if (!option) return null;
+
+    if (choice === 'change_time_for_day') {
+      if (
+        !option.scheduleOverrides?.length ||
+        option.scheduleOverrides.length < conflict.conflicts.length
+      ) {
+        return null;
+      }
+
+      return {
+        ...proposal,
+        scheduleOverrides: option.scheduleOverrides,
       };
     }
 
     return {
-      ...baseProposal,
-      scheduleOverrides: option.scheduleOverrides,
-    } as StudyPlanProposal | StudyPlanUpdateProposal;
+      ...proposal,
+      endDate: option.updatedEndDate ?? proposal.endDate,
+      skippedDates: option.skippedDates ?? [],
+    };
+  }
+
+  private buildLifePlanTimeRanges(
+    proposal: LifePlanProposal | LifePlanUpdateProposal,
+    userId: string,
+  ): TimeRange[] {
+    const skipped = new Set(proposal.skippedDates ?? []);
+    const overrides = new Map(
+      (proposal.scheduleOverrides ?? []).map((override) => [
+        override.date,
+        override,
+      ]),
+    );
+
+    return buildLifePlanScheduleData({ ...proposal, userId }, userId)
+      .filter(
+        (schedule) =>
+          !skipped.has(schedule.startDateTime.toISOString().slice(0, 10)),
+      )
+      .map((schedule) => {
+        const date = schedule.startDateTime.toISOString().slice(0, 10);
+        const override = overrides.get(date);
+
+        if (!override) return schedule;
+
+        return {
+          ...schedule,
+          startDateTime: new Date(`${date}T${override.startTime}:00.000Z`),
+          endDateTime: new Date(`${date}T${override.endTime}:00.000Z`),
+        };
+      });
+  }
+
+  private validateScheduleProposalTime(
+    proposal: ScheduleProposal | ScheduleUpdateProposal,
+  ) {
+    const start = new Date(proposal.startDateTime);
+    const end = new Date(proposal.endDateTime);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Schedule proposal has invalid date/time');
+    }
+
+    if (end.getTime() <= start.getTime()) {
+      throw new BadRequestException('Schedule must end after it starts');
+    }
   }
 
   private async findUpdatableSchedule(userId: string, scheduleId: string) {
@@ -693,6 +1138,25 @@ export class ChatService {
     }
 
     return schedule;
+  }
+
+  private async hasAcceptedScheduleCollision(
+    userId: string,
+    proposal: ScheduleProposal | ScheduleUpdateProposal,
+    ignoredScheduleId?: string,
+  ) {
+    const collision = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        status: 'ACCEPTED',
+        ...(ignoredScheduleId ? { id: { not: ignoredScheduleId } } : {}),
+        startDateTime: { lt: new Date(proposal.endDateTime) },
+        endDateTime: { gt: new Date(proposal.startDateTime) },
+      },
+      select: { id: true },
+    });
+
+    return Boolean(collision);
   }
 
   /**
@@ -743,6 +1207,15 @@ export class ChatService {
       startDateTime: message.schedule.startDateTime.toISOString(),
       endDateTime: message.schedule.endDateTime.toISOString(),
     };
+
+    if (
+      (await this.hasAcceptedScheduleCollision(userId, proposal)) &&
+      !(await this.proposalAllowsCollisionOverride(message))
+    ) {
+      throw new ConflictException(
+        'Jadwal ini sekarang bentrok dengan jadwal lain. Kirim pilihanmu lewat chat dulu.',
+      );
+    }
 
     const schedule = await this.prisma.schedule.update({
       where: { id: message.schedule.id },
@@ -903,6 +1376,19 @@ export class ChatService {
 
     await this.findUpdatableSchedule(userId, parsed.scheduleId);
     this.validateScheduleProposalTime(parsed);
+
+    if (
+      (await this.hasAcceptedScheduleCollision(
+        userId,
+        parsed,
+        parsed.scheduleId,
+      )) &&
+      !(await this.proposalAllowsCollisionOverride(message))
+    ) {
+      throw new ConflictException(
+        'Perubahan ini sekarang bentrok dengan jadwal lain. Kirim pilihanmu lewat chat dulu.',
+      );
+    }
 
     const schedule = await this.prisma.schedule.update({
       where: { id: parsed.scheduleId },
@@ -1081,9 +1567,7 @@ export class ChatService {
     try {
       parsed = JSON.parse(message.content) as ParsedAssistantResponse;
     } catch {
-      throw new BadRequestException(
-        'This message is not a life plan proposal',
-      );
+      throw new BadRequestException('This message is not a life plan proposal');
     }
 
     if (parsed.type === 'life_plan_accepted') {
@@ -1091,19 +1575,22 @@ export class ChatService {
     }
 
     if (parsed.type !== 'life_plan_proposal') {
-      throw new BadRequestException(
-        'This message is not a life plan proposal',
-      );
+      throw new BadRequestException('This message is not a life plan proposal');
     }
 
-    const result = await this.lifePlanService.createFromAi(userId, parsed);
+    const result = await this.lifePlanService.createFromAi(userId, parsed, {
+      allowConflicts: await this.proposalAllowsCollisionOverride(message),
+    });
 
     if (!result.created) {
-      const conflict = { ...result.conflict, proposal: parsed };
+      const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
       await this.prisma.message.update({
         where: { id: message.id },
-        data: { content: JSON.stringify(conflict) },
+        data: {
+          content: JSON.stringify(needsInfo),
+          isScheduleProposal: false,
+        },
       });
 
       return {
@@ -1130,6 +1617,32 @@ export class ChatService {
       lifePlan: result.lifePlan,
       lifePlanConflict: null,
     };
+  }
+
+  private async proposalAllowsCollisionOverride(message: {
+    chatId: string;
+    createdAt: Date;
+  }) {
+    const history = await this.prisma.message.findMany({
+      where: {
+        chatId: message.chatId,
+        createdAt: { lt: message.createdAt },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { role: true, content: true },
+    });
+    const latestUserMessage = [...history]
+      .reverse()
+      .find((candidate) => candidate.role === 'user');
+
+    if (
+      parseConflictDecision(latestUserMessage?.content ?? '') ===
+      'allow_collision'
+    ) {
+      return true;
+    }
+
+    return this.findConfirmedSafetyOverrides(history).allowCollision;
   }
 
   async acceptLifePlanUpdateProposal(userId: string, messageId: string) {
@@ -1176,14 +1689,20 @@ export class ChatService {
       userId,
       parsed.lifePlanId,
       parsed,
+      {
+        allowConflicts: await this.proposalAllowsCollisionOverride(message),
+      },
     );
 
     if (!result.updated) {
-      const conflict = { ...result.conflict, proposal: parsed };
+      const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
       await this.prisma.message.update({
         where: { id: message.id },
-        data: { content: JSON.stringify(conflict) },
+        data: {
+          content: JSON.stringify(needsInfo),
+          isScheduleProposal: false,
+        },
       });
 
       return {

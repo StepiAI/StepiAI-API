@@ -108,17 +108,27 @@ describe('buildScheduleInstructions', () => {
     expect(instructions).toContain('same language and conversational style');
   });
 
-  it('ngarahin conflict study plan supaya pilihan best/not overloaded tidak nanya ulang', () => {
+  it('ngarahin conflict dan overload ke need_info dengan pilihan natural', () => {
     const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
 
-    expect(instructions).toContain('Interpret the user\'s selection by intent');
-    expect(instructions).toContain('study_plan_conflict_resolution');
-    expect(instructions).toContain('"choice": "skip_day_and_extend"');
-    expect(instructions).toContain('skip semua yang bertabrakan');
-    expect(instructions).toContain('yang terbaik buat aku/gue');
-    expect(instructions).toContain('biar gak overloaded');
-    expect(instructions).toContain('prefer skip_day_and_extend');
+    expect(instructions).toContain('"type": "need_info"');
+    expect(instructions).toContain('calendar_context');
+    expect(instructions).toContain('skip/lewati tanggal bentrok');
+    expect(instructions).toContain('bebas');
+    expect(instructions).toContain('explicitly allows the collision');
+    expect(instructions).toContain('may be stressful');
     expect(instructions).toContain('Do not ask another question');
+  });
+
+  it('hanya memakai tipe respons yang ditangani backend', () => {
+    const instructions = buildScheduleInstructions(NOW, 'Asia/Jakarta');
+
+    expect(instructions).toContain('- life_plan_proposal');
+    expect(instructions).toContain('- life_plan_update_proposal');
+    expect(instructions).toContain('- life_plan_delete_proposal');
+    expect(instructions).toContain('- need_info');
+    expect(instructions).not.toContain('- needs_info');
+    expect(instructions).not.toContain('- study_plan_proposal');
   });
 
   it('ngarahin agent buat update life plan lewat proposal update', () => {

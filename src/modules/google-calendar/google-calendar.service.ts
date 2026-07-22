@@ -268,6 +268,29 @@ export class GoogleCalendarService {
     }
   }
 
+  // "Move this meeting"
+  async rescheduleEvent(
+    userId: string,
+    eventId: string,
+    startDateTime: string,
+    endDateTime: string,
+  ) {
+    const start = new Date(startDateTime);
+    const end = new Date(endDateTime);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid start or end time.');
+    }
+    if (end.getTime() <= start.getTime()) {
+      throw new BadRequestException('Event must end after it starts.');
+    }
+
+    return this.patchEvent(userId, eventId, {
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: end.toISOString() },
+    });
+  }
+
   async patchEvent(
     userId: string,
     eventId: string,

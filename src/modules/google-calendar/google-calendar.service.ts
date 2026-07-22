@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Auth, calendar_v3, google } from 'googleapis';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GeocodingService } from '../weather/geocoding.service';
 import { CreateEventDto } from './dto/create-event.dto';
 
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
@@ -21,6 +22,7 @@ export class GoogleCalendarService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly geocoding: GeocodingService,
     configService: ConfigService<AppConfig, true>,
   ) {
     const { clientId, clientSecret } = configService.get('google', {
@@ -186,10 +188,36 @@ export class GoogleCalendarService {
         singleEvents: true,
         orderBy: 'startTime',
       });
-      return data.items ?? [];
+      return this.attachSavedLocations(data.items ?? []);
     } catch (error) {
       throw this.toGoogleApiException(error, 'list calendar events');
     }
+  }
+
+  private async attachSavedLocations(items: calendar_v3.Schema$Event[]) {
+    const locations = items
+      .map((item) => item.location)
+      .filter((location): location is string => Boolean(location));
+
+    if (locations.length === 0) {
+      return items;
+    }
+
+    const coordsByLocation = await this.geocoding.lookupCachedMany(locations);
+
+    if (coordsByLocation.size === 0) {
+      return items;
+    }
+
+    return items.map((item) => {
+      const coords = item.location
+        ? coordsByLocation.get(item.location)
+        : undefined;
+
+      return coords
+        ? { ...item, latitude: coords.latitude, longitude: coords.longitude }
+        : item;
+    });
   }
 
   async createEvent(userId: string, input: CreateEventDto) {
@@ -209,11 +237,30 @@ export class GoogleCalendarService {
           summary: input.summary,
           location: input.location,
           description: input.description,
-          // dateTime udah bawa offset dari client, jadi gak perlu kirim timeZone
-          start: { dateTime: start.toISOString() },
-          end: { dateTime: end.toISOString() },
+          start: { dateTime: start.toISOString(), timeZone: input.timeZone },
+          end: { dateTime: end.toISOString(), timeZone: input.timeZone },
+          // undefined = event sekali jalan; Google nolak array kosong
+          recurrence: input.recurrence?.length ? input.recurrence : undefined,
         },
       });
+
+      // Google gak nyimpen koordinat, jd kalau user milih tempat (ada lat/lng),
+      // kita seed ke geocode_cache di-key sama teks lokasinya. nanti pas list/
+      // detail, teks lokasi yg sama bakal ke-resolve ke koordinat pilihan ini.
+      if (
+        input.location &&
+        input.latitude !== undefined &&
+        input.longitude !== undefined
+      ) {
+        await this.geocoding.cachePlace(input.location, {
+          latitude: input.latitude,
+          longitude: input.longitude,
+          label: input.location,
+        });
+
+        return { ...data, latitude: input.latitude, longitude: input.longitude };
+      }
+
       return data;
     } catch (error) {
       throw this.toGoogleApiException(error, 'create calendar event');

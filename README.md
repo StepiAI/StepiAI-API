@@ -98,6 +98,10 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
 "# StepiAI-API" 
 
+## API behavior notes
+
+- [StepiAI chat behavior and frontend compatibility](docs/AI_CHAT_BEHAVIOR.md)
+
 ## OpenAI integration
 
 #### taruh OPENAI_API_KEY di local env.

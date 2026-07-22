@@ -6,6 +6,7 @@ import { AppConfig } from '../../config/configuration';
 const DEFAULT_TEXT_MODEL = 'gpt-5-nano';
 const DEFAULT_SPEECH_MODEL = 'gpt-4o-mini-tts';
 const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
 const speechContentTypes = {
   mp3: 'audio/mpeg',
@@ -73,7 +74,7 @@ export class OpenAiService {
       model: options.model ?? DEFAULT_TEXT_MODEL,
       input,
       instructions: options.instructions,
-      max_output_tokens: options.maxOutputTokens,
+      max_output_tokens: options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     });
 
     return response.output_text;

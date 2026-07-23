@@ -267,6 +267,47 @@ export class GoogleCalendarService {
       throw this.toGoogleApiException(error, 'create calendar event');
     }
   }
+T
+  async updateEvent(userId: string, eventId: string, input: CreateEventDto) {
+    const start = new Date(input.startDateTime);
+    const end = new Date(input.endDateTime);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid start or end time.');
+    }
+    if (end.getTime() <= start.getTime()) {
+      throw new BadRequestException('Event must end after it starts.');
+    }
+
+    try {
+      const data = await this.patchEvent(userId, eventId, {
+        summary: input.summary,
+        location: input.location ?? null,
+        description: input.description ?? null,
+        start: { dateTime: start.toISOString(), timeZone: input.timeZone },
+        end: { dateTime: end.toISOString(), timeZone: input.timeZone },
+        recurrence: input.recurrence?.length ? input.recurrence : undefined,
+      });
+
+      if (
+        input.location &&
+        input.latitude !== undefined &&
+        input.longitude !== undefined
+      ) {
+        await this.geocoding.cachePlace(input.location, {
+          latitude: input.latitude,
+          longitude: input.longitude,
+          label: input.location,
+        });
+
+        return { ...data, latitude: input.latitude, longitude: input.longitude };
+      }
+
+      return data;
+    } catch (error) {
+      throw this.toGoogleApiException(error, 'update calendar event');
+    }
+  }
 
   // "Move this meeting"
   async rescheduleEvent(

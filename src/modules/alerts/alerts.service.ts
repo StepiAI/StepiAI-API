@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WeatherService, HourlyWeather } from '../weather/weather.service';
 import { RoutingService } from '../routing/routing.service';
-import { recommendDeparture } from './on-time';
+import { onTimeProbability, recommendDeparture } from './on-time';
 
 // ambang buat munculin warning macet
 const TRAFFIC_DELAY_ALERT_SEC = 5 * 60;
+const PUSH_DELAY_SEC = 15 * 60;
 const WET_PROBABILITY_THRESHOLD = 40;
 const LOOKAHEAD_WINDOW_MS = 24 * 3_600_000;
 
@@ -40,6 +41,8 @@ export interface ScheduleAlert {
     naiveDeparture: string;
     onTimeBefore: number;
     onTimeAfter: number;
+    pushOnTime: number;
+    pushDelayMinutes: number;
     travelMinutes: number;
     trafficDelayMinutes: number;
   };
@@ -184,6 +187,11 @@ export class AlertsService {
     const pctBefore = Math.round(rec.onTimeBefore * 100);
     const pctAfter = Math.round(rec.onTimeAfter * 100);
 
+    const pushOnTime = onTimeProbability(
+      PUSH_DELAY_SEC - rec.trafficDelaySeconds,
+      rec.spreadSeconds,
+    );
+
     return {
       eventId: event.id,
       summary: event.summary,
@@ -198,6 +206,8 @@ export class AlertsService {
         naiveDeparture: new Date(rec.naiveDepartureMs).toISOString(),
         onTimeBefore: rec.onTimeBefore,
         onTimeAfter: rec.onTimeAfter,
+        pushOnTime,
+        pushDelayMinutes: PUSH_DELAY_SEC / 60,
         travelMinutes: Math.round(estimate.travelSeconds / 60),
         trafficDelayMinutes: Math.round(rec.trafficDelaySeconds / 60),
       },

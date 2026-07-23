@@ -3,9 +3,11 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -75,6 +77,24 @@ export class GoogleCalendarController {
       dto.startDateTime,
       dto.endDateTime,
     );
+  }
+
+  @Put('events/:id')
+  updateEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') eventId: string,
+    @Body() dto: CreateEventDto,
+  ) {
+    return this.googleCalendarService.updateEvent(user.id, eventId, dto);
+  }
+
+  @Delete('events/:id')
+  @HttpCode(204)
+  deleteEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') eventId: string,
+  ) {
+    return this.googleCalendarService.deleteEvent(user.id, eventId);
   }
 
   @Get('events')

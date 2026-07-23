@@ -5,6 +5,8 @@ import type { SaveDeviceTokenDto } from './dto/save-device-token.dto';
 import type { SendNotificationToUserDto } from './dto/send-notification-to-user.dto';
 import type { SaveNotificationToAllDto } from './dto/save-notification-to-all.dto';
 import type { AddNotificationJobDto } from './dto/add-notification-job.dto';
+import type { RemoveNotificationJobDto } from './dto/remove-notification-job.dto';
+import type { AddNotificationsJobResponse } from './notifications.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { FirebaseService } from '../firebase/firebase.service';
 
@@ -56,7 +58,9 @@ export class NotificationsService {
     );
   }
 
-  async addNotificationJob(dto: AddNotificationJobDto) {
+  async addNotificationJob(
+    dto: AddNotificationJobDto,
+  ): Promise<AddNotificationsJobResponse> {
     const jobName = `${dto.name}-${Date.now()}-${Math.random()}`;
     const notificationData = structuredClone(dto.notificationData);
 
@@ -73,7 +77,10 @@ export class NotificationsService {
           } catch (error) {
             throw error;
           } finally {
-            this.removeNotificationJob(jobName);
+            const removeNotificationJobRequest: RemoveNotificationJobDto = {
+              jobName: jobName,
+            };
+            await this.removeNotificationJob(removeNotificationJobRequest);
           }
         },
         null,
@@ -82,16 +89,22 @@ export class NotificationsService {
       );
 
       this.schedulerRegistry.addCronJob(jobName, job);
+
+      const response: AddNotificationsJobResponse = {
+        jobName: jobName,
+      };
+      return response;
     } catch (error) {
       throw error;
     }
   }
 
-  private removeNotificationJob(jobName: string) {
+  async removeNotificationJob(dto: RemoveNotificationJobDto) {
     try {
-      const job = this.schedulerRegistry.getCronJob(jobName);
+      const job = this.schedulerRegistry.getCronJob(dto.jobName);
       job.stop();
-      this.schedulerRegistry.deleteCronJob(jobName);
+      this.schedulerRegistry.deleteCronJob(dto.jobName);
+      return 'Notification job removed successfully';
     } catch (error) {
       throw error;
     }

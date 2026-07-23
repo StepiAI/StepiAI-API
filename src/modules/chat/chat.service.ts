@@ -59,6 +59,17 @@ export interface ScheduleDismissedMessage {
   proposal: ScheduleProposal;
 }
 
+export interface ProposalRejectedMessage {
+  type: 'proposal_rejected';
+  content: string;
+  proposal:
+    | ScheduleUpdateProposal
+    | ScheduleDeleteProposal
+    | LifePlanProposal
+    | LifePlanUpdateProposal
+    | LifePlanDeleteProposal;
+}
+
 export interface ScheduleUpdateProposal {
   type: 'schedule_update_proposal';
   scheduleId: string;
@@ -139,6 +150,7 @@ export type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleAcceptedMessage
   | ScheduleDismissedMessage
+  | ProposalRejectedMessage
   | ScheduleUpdateProposal
   | ScheduleUpdateAcceptedMessage
   | ScheduleDeleteProposal
@@ -470,7 +482,11 @@ export class ChatService {
           }
         }
 
-        if (capacity.isPotentiallyStressful && !allowsStressfulLoad) {
+        if (
+          capacity.isPotentiallyStressful &&
+          !allowsStressfulLoad &&
+          conflictDecision !== 'ai_decides'
+        ) {
           parsed = this.buildCapacityNeedInfo(capacity);
           isScheduleProposal = false;
           isScheduleUpdateProposal = false;
@@ -1254,9 +1270,13 @@ export class ChatService {
       proposal,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     // Signing in with Supabase's Google provider doesn't by itself grant
@@ -1265,7 +1285,11 @@ export class ChatService {
     // Google-provider users, and never let a failed/missing sync block the
     // schedule from being saved.
     if (provider !== 'google') {
-      return { schedule, syncedToGoogleCalendar: false as const };
+      return {
+        schedule,
+        message: updatedMessage,
+        syncedToGoogleCalendar: false as const,
+      };
     }
 
     try {
@@ -1284,11 +1308,13 @@ export class ChatService {
 
       return {
         schedule: updatedSchedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1353,12 +1379,140 @@ export class ChatService {
       proposal,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(dismissedMessage) },
+      data: {
+        content: JSON.stringify(dismissedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
-    return { dismissed: true as const };
+    return {
+      dismissed: true as const,
+      message: updatedMessage,
+    };
+  }
+
+  async rejectProposal(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: true, schedule: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (!message.chat) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.chat.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    let parsed: ParsedAssistantResponse;
+
+    try {
+      parsed = JSON.parse(message.content) as ParsedAssistantResponse;
+    } catch {
+      throw new BadRequestException('This message is not a proposal');
+    }
+
+    if (parsed.type === 'schedule_proposal') {
+      if (message.schedule?.status === 'ACCEPTED') {
+        throw new ConflictException('This schedule has already been accepted');
+      }
+
+      if (message.schedule) {
+        await this.prisma.schedule.update({
+          where: { id: message.schedule.id },
+          data: {
+            isDeleted: true,
+            messageId: null,
+          },
+        });
+      }
+
+      const dismissedMessage: ScheduleDismissedMessage = {
+        type: 'schedule_dismissed',
+        content: 'Oke, jadwal ini nggak ditambahkan.',
+        proposal: parsed,
+      };
+
+      const updatedMessage = await this.prisma.message.update({
+        where: { id: message.id },
+        data: {
+          content: JSON.stringify(dismissedMessage),
+          isScheduleProposal: false,
+        },
+        include: { schedule: true },
+      });
+
+      return {
+        rejected: true as const,
+        message: updatedMessage,
+      };
+    }
+
+    const proposal = this.getRejectableProposal(parsed);
+
+    if (!proposal) {
+      throw new BadRequestException('This message is not a proposal');
+    }
+
+    const rejectedMessage: ProposalRejectedMessage = {
+      type: 'proposal_rejected',
+      content: this.getProposalRejectedContent(proposal),
+      proposal,
+    };
+
+    const updatedMessage = await this.prisma.message.update({
+      where: { id: message.id },
+      data: {
+        content: JSON.stringify(rejectedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
+    });
+
+    return {
+      rejected: true as const,
+      message: updatedMessage,
+    };
+  }
+
+  private getProposalRejectedContent(
+    proposal: ProposalRejectedMessage['proposal'],
+  ) {
+    switch (proposal.type) {
+      case 'schedule_update_proposal':
+        return 'Oke, perubahan jadwal ini nggak disimpan.';
+      case 'schedule_delete_proposal':
+        return 'Oke, jadwal ini nggak dihapus.';
+      case 'life_plan_proposal':
+        return 'Oke, life plan ini nggak dibuat.';
+      case 'life_plan_update_proposal':
+        return 'Oke, perubahan life plan ini nggak disimpan.';
+      case 'life_plan_delete_proposal':
+        return 'Oke, life plan ini nggak dihapus.';
+    }
+  }
+
+  private getRejectableProposal(
+    parsed: ParsedAssistantResponse,
+  ): ProposalRejectedMessage['proposal'] | null {
+    switch (parsed.type) {
+      case 'schedule_update_proposal':
+      case 'schedule_delete_proposal':
+      case 'life_plan_proposal':
+      case 'life_plan_update_proposal':
+      case 'life_plan_delete_proposal':
+        return parsed;
+      default:
+        return null;
+    }
   }
 
   async acceptScheduleUpdateProposal(
@@ -1443,15 +1597,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     if (provider !== 'google' || !schedule.googleCalendarEventId) {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
       };
     }
@@ -1472,12 +1631,14 @@ export class ChatService {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1548,15 +1709,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     if (provider !== 'google' || !schedule.googleCalendarEventId) {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
       };
     }
@@ -1570,12 +1736,14 @@ export class ChatService {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1623,18 +1791,20 @@ export class ChatService {
     if (!result.created) {
       const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
-      await this.prisma.message.update({
+      const updatedMessage = await this.prisma.message.update({
         where: { id: message.id },
         data: {
           content: JSON.stringify(needsInfo),
           isScheduleProposal: false,
         },
+        include: { schedule: true },
       });
 
       return {
         created: false as const,
         lifePlan: null,
         lifePlanConflict: result.conflict,
+        message: updatedMessage,
       };
     }
 
@@ -1645,15 +1815,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       created: true as const,
       lifePlan: result.lifePlan,
       lifePlanConflict: null,
+      message: updatedMessage,
     };
   }
 
@@ -1736,18 +1911,20 @@ export class ChatService {
     if (!result.updated) {
       const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
-      await this.prisma.message.update({
+      const updatedMessage = await this.prisma.message.update({
         where: { id: message.id },
         data: {
           content: JSON.stringify(needsInfo),
           isScheduleProposal: false,
         },
+        include: { schedule: true },
       });
 
       return {
         updated: false as const,
         lifePlan: null,
         lifePlanConflict: result.conflict,
+        message: updatedMessage,
       };
     }
 
@@ -1758,15 +1935,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       updated: true as const,
       lifePlan: result.lifePlan,
       lifePlanConflict: null,
+      message: updatedMessage,
     };
   }
 
@@ -1822,14 +2004,19 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       deleted: true as const,
       lifePlan,
+      message: updatedMessage,
     };
   }
 }

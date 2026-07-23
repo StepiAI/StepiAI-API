@@ -19,6 +19,7 @@ describe('parseConflictDecision', () => {
     expect(parseConflictDecision('bebas deh, pilihkan yang aman')).toBe(
       'ai_decides',
     );
+    expect(parseConflictDecision('pilihin waktu aja deh')).toBe('ai_decides');
   });
 
   it('override bentrok harus eksplisit', () => {
@@ -42,6 +43,7 @@ describe('isProceedAnywayReply', () => {
   it('menerima override singkat yang jelas dan menolak iya yang ambigu', () => {
     expect(isProceedAnywayReply('gapapa, lanjut')).toBe(true);
     expect(isProceedAnywayReply('oke lanjut aja')).toBe(true);
+    expect(isProceedAnywayReply('Lanjutkan')).toBe(true);
     expect(isProceedAnywayReply('iya')).toBe(false);
   });
 });

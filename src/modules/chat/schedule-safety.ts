@@ -60,6 +60,7 @@ export function parseConflictDecision(
 
   if (
     /\b(?:bebas|terserah)\b/.test(text) ||
+    /\b(?:pilih|pilihin|pilihkan|carikan)\b.*\b(?:jam|waktu)\b/.test(text) ||
     /\b(?:pilih|pilihin|pilihkan|carikan)\b.*\b(?:terbaik|aman|ringan)\b/.test(
       text,
     ) ||
@@ -92,7 +93,8 @@ export function isProceedAnywayReply(content: string): boolean {
       text,
     ) ||
     /^(?:oke|ok)[,!.\s]+(?:lanjut|tetap|buat|bikin|jalan)/.test(text) ||
-    /^(?:tetap|lanjut)\s+(?:aja|saja|buat|bikin|jalan)/.test(text)
+    /^(?:tetap|lanjut)\s+(?:aja|saja|buat|bikin|jalan)/.test(text) ||
+    /^lanjutkan\b/.test(text)
   );
 }
 

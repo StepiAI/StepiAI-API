@@ -115,15 +115,24 @@ function buildVoicePopup(
     return null;
   }
 
-  const action = getAcceptAction(result.parsed, result.assistantMessage.id);
-  
+  const acceptAction = getAcceptAction(
+    result.parsed,
+    result.assistantMessage.id,
+  );
+  const rejectAction = getRejectAction(
+    result.parsed,
+    result.assistantMessage.id,
+  );
+  const actions = [acceptAction, rejectAction].filter(
+    (action): action is VoicePopupAction => Boolean(action),
+  );
 
   return {
     kind: 'proposal',
     title: getProposalTitle(result.parsed),
     message: buildPopupMessage(result.parsed, rawTimeZone),
     data: result.parsed,
-    actions: action ? [action] : [],
+    actions,
   };
 }
 
@@ -169,6 +178,29 @@ function getAcceptAction(
         label: 'Hapus study plan',
         method: 'POST',
         path: `${basePath}/accept-life-plan-delete`,
+      };
+    default:
+      return null;
+  }
+}
+
+function getRejectAction(
+  parsed: ParsedAssistantResponse,
+  messageId: string,
+): VoicePopupAction | null {
+  const basePath = `/api/chats/messages/${messageId}`;
+
+  switch (parsed.type) {
+    case 'schedule_proposal':
+    case 'schedule_update_proposal':
+    case 'schedule_delete_proposal':
+    case 'life_plan_proposal':
+    case 'life_plan_update_proposal':
+    case 'life_plan_delete_proposal':
+      return {
+        label: 'Tolak',
+        method: 'POST',
+        path: `${basePath}/reject`,
       };
     default:
       return null;

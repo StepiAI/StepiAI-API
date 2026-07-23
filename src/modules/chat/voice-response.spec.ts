@@ -58,6 +58,11 @@ describe('buildVoiceAgentResponse', () => {
           method: 'POST',
           path: '/api/chats/messages/message-1/accept',
         },
+        {
+          label: 'Tolak',
+          method: 'POST',
+          path: '/api/chats/messages/message-1/reject',
+        },
       ],
     });
   });

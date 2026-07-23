@@ -65,6 +65,14 @@ export class ChatController {
     return this.chatService.dismissScheduleProposal(user.id, messageId);
   }
 
+  @Post('messages/:messageId/reject')
+  async rejectProposal(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.rejectProposal(user.id, messageId);
+  }
+
   @Post('messages/:messageId/accept-schedule-update')
   async acceptScheduleUpdate(
     @CurrentUser() user: AuthenticatedUser,

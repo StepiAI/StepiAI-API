@@ -83,6 +83,7 @@ export interface LifePlanScheduleOverride {
 export type CreateLifePlanFromAiDto = CreateLifePlanDto & {
   scheduleOverrides?: LifePlanScheduleOverride[];
   skippedDates?: string[];
+  messageId?: string;
 };
 
 export interface LifePlanConflict {

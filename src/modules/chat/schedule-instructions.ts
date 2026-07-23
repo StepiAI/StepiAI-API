@@ -1,4 +1,4 @@
-const FALLBACK_TIME_ZONE = 'UTC';
+const FALLBACK_TIME_ZONE = 'UTC+7';
 
 export function normalizeTimeZone(timeZone?: string | null): string {
   if (!timeZone) return FALLBACK_TIME_ZONE;
@@ -67,6 +67,8 @@ user only uses a few foreign words.
 
 CURRENT TIME:
 ${describeNow(now, timeZone)} (${timeZone}, UTC${offset})
+
+FOR RESPONSE TO USER MUST: TRANSLATE FROM UTC TO UTC+7
 
 ## 1. OUTPUT CONTRACT
 
@@ -211,7 +213,7 @@ For an unrelated request, return:
 
 {
   "type": "message",
-  "content": "Maaf, aku hanya bisa membantu mengatur jadwal dan life plan. Ada jadwal atau rencana belajar yang ingin kamu atur?"
+  "content": "Maaf, aku hanya bisa membantu mengatur jadwal dan life plan. Ada jadwal atau rencana terstruktur yang ingin kamu atur?"
 }
 
 You may naturally adapt the response when the user clearly uses another language.

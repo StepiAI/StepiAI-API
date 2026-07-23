@@ -8,6 +8,11 @@ export interface AppConfig {
   ai: {
     openAiApiKey: string;
   };
+  azureSpeech: {
+    endpoint: string;
+    key: string;
+    resourceId: string;
+  };
   google: {
     clientId: string;
     clientSecret: string;
@@ -26,6 +31,11 @@ export default (): AppConfig => ({
   },
   ai: {
     openAiApiKey: process.env.OPENAI_API_KEY ?? '',
+  },
+  azureSpeech: {
+    endpoint: process.env.AZURE_SPEECH_ENDPOINT ?? '',
+    key: process.env.AZURE_SPEECH_KEY ?? '',
+    resourceId: process.env.AZURE_RESOURCE_ID ?? '',
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',

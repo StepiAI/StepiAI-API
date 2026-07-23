@@ -83,6 +83,7 @@ export interface LifePlanScheduleOverride {
 export type CreateLifePlanFromAiDto = CreateLifePlanDto & {
   scheduleOverrides?: LifePlanScheduleOverride[];
   skippedDates?: string[];
+  messageId?: string;
 };
 
 export interface LifePlanConflict {
@@ -272,9 +273,16 @@ export class LifePlanService {
   async deleteFromAi(userId: string, lifePlanId: string) {
     await this.findOwnedLifePlan(userId, lifePlanId);
 
-    return this.prisma.lifePlan.delete({
-      where: {
-        id: lifePlanId,
+    return this.prisma.lifePlan.update({
+      where: { id: lifePlanId },
+      data: {
+        isDeleted: true,
+        schedules: {
+          updateMany: {
+            where: { isDeleted: false },
+            data: { isDeleted: true },
+          },
+        },
       },
     });
   }
@@ -341,6 +349,7 @@ export class LifePlanService {
       where: {
         id: lifePlanId,
         userId,
+        isDeleted: false,
       },
     });
 
@@ -481,11 +490,13 @@ export class LifePlanService {
         },
       });
 
-      await tx.schedule.deleteMany({
+      await tx.schedule.updateMany({
         where: {
           userId,
           lifePlanId,
+          isDeleted: false,
         },
+        data: { isDeleted: true },
       });
 
       if (scheduleData.length > 0) {
@@ -556,6 +567,7 @@ export class LifePlanService {
     const existingSchedules = await this.prisma.schedule.findMany({
       where: {
         userId,
+        isDeleted: false,
         status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: new Date(maxEndTime) },
         endDateTime: { gt: new Date(minStartTime) },
@@ -707,6 +719,7 @@ export class LifePlanService {
     const conflict = await this.prisma.schedule.findFirst({
       where: {
         userId,
+        isDeleted: false,
         status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: endDateTime },
         endDateTime: { gt: startDateTime },
@@ -778,6 +791,7 @@ export class LifePlanService {
     const existingSchedules = await this.prisma.schedule.findMany({
       where: {
         userId,
+        isDeleted: false,
         status: ScheduleStatus.ACCEPTED,
         startDateTime: { lt: searchEnd },
         endDateTime: { gt: searchStart },
@@ -850,6 +864,7 @@ export class LifePlanService {
     return this.prisma.lifePlan.findMany({
       where: {
         userId,
+        isDeleted: false,
       },
       orderBy: {
         createdAt: 'desc',
@@ -862,9 +877,11 @@ export class LifePlanService {
       where: {
         id: lifePlanId,
         userId,
+        isDeleted: false,
       },
       include: {
         schedules: {
+          where: { isDeleted: false },
           orderBy: {
             startDateTime: 'asc',
           },

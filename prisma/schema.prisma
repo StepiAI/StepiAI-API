@@ -38,6 +38,7 @@ model Chat {
   updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   providerState ChatProvider?
   messages      Message[]
+  isDeleted     Boolean @default(false)
 
   @@map("chats")
 }
@@ -51,6 +52,7 @@ model Message {
   isScheduleProposal Boolean   @default(false) @map("is_schedule_proposal")
   chat               Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   schedule           Schedule?
+  isDeleted          Boolean @default(false)
 
   @@index([chatId, createdAt], map: "idx_messages_chat_created")
   @@index([chatId], map: "idx_messages_chat_id")
@@ -73,6 +75,8 @@ model Schedule {
   lifePlanId            String?        @map("life_plan_id") @db.Uuid
   lifePlan              LifePlan?      @relation(fields: [lifePlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
+  isDeleted             Boolean? @default(false)
+  isPlan                Boolean? @default(false)
 
   @@index([lifePlanId], map: "idx_schedules_life_plan_id")
   @@index([userId], map: "idx_schedules_user_id")
@@ -106,6 +110,7 @@ model LifePlan {
   updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   focusPreferences FocusPreferences @map("focus_preferences")
   schedules        Schedule[]
+  isDeleted        Boolean @default(false)
 
   @@index([userId], map: "idx_life_plans_user_id")
   @@map("life_plans")

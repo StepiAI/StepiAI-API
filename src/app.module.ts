@@ -16,6 +16,7 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
 import { RoutingModule } from './modules/routing/routing.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
+import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
     NotificationsModule,
     FirebaseModule,
     ScheduleModule,
+    VoiceModule,
     RoutingModule,
     AlertsModule,
   ],

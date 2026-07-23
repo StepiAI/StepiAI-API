@@ -238,7 +238,7 @@ describe('LifePlanService.updateFromAi', () => {
         update: jest.fn().mockResolvedValue(lifePlan),
       },
       schedule: {
-        deleteMany: jest.fn(),
+        updateMany: jest.fn(),
         createMany: jest.fn(),
       },
     };
@@ -275,11 +275,13 @@ describe('LifePlanService.updateFromAi', () => {
         where: { id: 'life-plan-1' },
       }),
     );
-    expect(tx.schedule.deleteMany).toHaveBeenCalledWith({
+    expect(tx.schedule.updateMany).toHaveBeenCalledWith({
       where: {
         userId: 'user-1',
         lifePlanId: 'life-plan-1',
+        isDeleted: false,
       },
+      data: { isDeleted: true },
     });
     expect(tx.schedule.createMany).toHaveBeenCalledWith({
       data: [
@@ -295,7 +297,7 @@ describe('LifePlanService.updateFromAi', () => {
 });
 
 describe('LifePlanService.deleteFromAi', () => {
-  it('deletes an owned life plan', async () => {
+  it('soft deletes an owned life plan and its schedules', async () => {
     const lifePlan = {
       id: 'life-plan-1',
       userId: 'user-1',
@@ -304,7 +306,7 @@ describe('LifePlanService.deleteFromAi', () => {
     const prisma = {
       lifePlan: {
         findFirst: jest.fn().mockResolvedValue(lifePlan),
-        delete: jest.fn().mockResolvedValue(lifePlan),
+        update: jest.fn().mockResolvedValue(lifePlan),
       },
     };
     const service = new LifePlanService(prisma as never);
@@ -312,8 +314,17 @@ describe('LifePlanService.deleteFromAi', () => {
     await expect(
       service.deleteFromAi('user-1', 'life-plan-1'),
     ).resolves.toEqual(lifePlan);
-    expect(prisma.lifePlan.delete).toHaveBeenCalledWith({
+    expect(prisma.lifePlan.update).toHaveBeenCalledWith({
       where: { id: 'life-plan-1' },
+      data: {
+        isDeleted: true,
+        schedules: {
+          updateMany: {
+            where: { isDeleted: false },
+            data: { isDeleted: true },
+          },
+        },
+      },
     });
   });
 });
@@ -337,8 +348,13 @@ describe('LifePlanService.findOneByUser', () => {
       service.findOneByUser('user-1', 'life-plan-1'),
     ).resolves.toEqual(lifePlan);
     expect(prisma.lifePlan.findFirst).toHaveBeenCalledWith({
-      where: { id: 'life-plan-1', userId: 'user-1' },
-      include: { schedules: { orderBy: { startDateTime: 'asc' } } },
+      where: { id: 'life-plan-1', userId: 'user-1', isDeleted: false },
+      include: {
+        schedules: {
+          where: { isDeleted: false },
+          orderBy: { startDateTime: 'asc' },
+        },
+      },
     });
   });
 

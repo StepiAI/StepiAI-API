@@ -37,6 +37,14 @@ export class ChatController {
     return this.chatService.sendMessage(user.id, dto);
   }
 
+  @Post('voice/messages')
+  async sendVoiceMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateMessageDto,
+  ) {
+    return this.chatService.sendVoiceMessage(user.id, dto);221  
+  }
+
   @Post('messages/:messageId/accept')
   async acceptSchedule(
     @CurrentUser() user: AuthenticatedUser,
@@ -55,6 +63,14 @@ export class ChatController {
     @Param('messageId', ParseUUIDPipe) messageId: string,
   ) {
     return this.chatService.dismissScheduleProposal(user.id, messageId);
+  }
+
+  @Post('messages/:messageId/reject')
+  async rejectProposal(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.chatService.rejectProposal(user.id, messageId);
   }
 
   @Post('messages/:messageId/accept-schedule-update')

@@ -20,6 +20,7 @@ import {
 import { CreateMessageDto } from './dto/create-message.dto';
 import {
   buildScheduleInstructions,
+  buildVoiceScheduleInstructions,
   normalizeTimeZone,
 } from './schedule-instructions';
 import {
@@ -31,6 +32,8 @@ import {
   type ConflictDecision,
   type TimeRange,
 } from './schedule-safety';
+import { buildVoiceAgentResponse } from './voice-response';
+import { Console } from 'console';
 
 export { isAffirmativeReply } from './schedule-safety';
 
@@ -54,6 +57,17 @@ export interface ScheduleDismissedMessage {
   type: 'schedule_dismissed';
   content: string;
   proposal: ScheduleProposal;
+}
+
+export interface ProposalRejectedMessage {
+  type: 'proposal_rejected';
+  content: string;
+  proposal:
+    | ScheduleUpdateProposal
+    | ScheduleDeleteProposal
+    | LifePlanProposal
+    | LifePlanUpdateProposal
+    | LifePlanDeleteProposal;
 }
 
 export interface ScheduleUpdateProposal {
@@ -132,10 +146,11 @@ export interface LifePlanDeleteAcceptedMessage {
   proposal: LifePlanDeleteProposal;
 }
 
-type ParsedAssistantResponse =
+export type ParsedAssistantResponse =
   | ScheduleProposal
   | ScheduleAcceptedMessage
   | ScheduleDismissedMessage
+  | ProposalRejectedMessage
   | ScheduleUpdateProposal
   | ScheduleUpdateAcceptedMessage
   | ScheduleDeleteProposal
@@ -221,11 +236,10 @@ export class ChatService {
     const chat = await this.findOrCreateChatRecord(userId);
 
     await this.prisma.$transaction([
-      this.prisma.schedule.updateMany({
-        where: { message: { chatId: chat.id } },
-        data: { messageId: null },
+      this.prisma.message.updateMany({
+        where: { chatId: chat.id },
+        data: { isDeleted: true },
       }),
-      this.prisma.message.deleteMany({ where: { chatId: chat.id } }),
     ]);
 
     return { ...chat, messages: [] };
@@ -237,6 +251,9 @@ export class ChatService {
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
+          where: {
+            isDeleted: false,
+          },
           include: { schedule: true },
         },
       },
@@ -253,6 +270,20 @@ export class ChatService {
   }
 
   async sendMessage(userId: string, dto: CreateMessageDto) {
+    return this.sendMessageWithMode(userId, dto, 'chat');
+  }
+
+  async sendVoiceMessage(userId: string, dto: CreateMessageDto) {
+    const response = await this.sendMessageWithMode(userId, dto, 'voice');
+
+    return buildVoiceAgentResponse(response, dto.timezone);
+  }
+
+  private async sendMessageWithMode(
+    userId: string,
+    dto: CreateMessageDto,
+    mode: 'chat' | 'voice',
+  ) {
     const chat = await this.findOrCreateChatRecord(userId);
     const now = new Date();
 
@@ -266,13 +297,14 @@ export class ChatService {
 
     const [history, currentSchedules, lifePlans] = await Promise.all([
       this.prisma.message.findMany({
-        where: { chatId: chat.id },
+        where: { chatId: chat.id, isDeleted: false },
         orderBy: { createdAt: 'asc' },
         include: { schedule: true },
       }),
       this.prisma.schedule.findMany({
         where: {
           userId,
+          isDeleted: false,
           status: 'ACCEPTED',
           endDateTime: {
             gt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
@@ -318,7 +350,10 @@ export class ChatService {
 
     try {
       const raw = await this.openAiService.generateText(conversation, {
-        instructions: buildScheduleInstructions(now, dto.timezone),
+        instructions:
+          mode === 'voice'
+            ? buildVoiceScheduleInstructions(now, dto.timezone)
+            : buildScheduleInstructions(now, dto.timezone),
       });
 
       parsed = this.normalizeAssistantResponse(JSON.parse(raw));
@@ -447,7 +482,11 @@ export class ChatService {
           }
         }
 
-        if (capacity.isPotentiallyStressful && !allowsStressfulLoad) {
+        if (
+          capacity.isPotentiallyStressful &&
+          !allowsStressfulLoad &&
+          conflictDecision !== 'ai_decides'
+        ) {
           parsed = this.buildCapacityNeedInfo(capacity);
           isScheduleProposal = false;
           isScheduleUpdateProposal = false;
@@ -1124,6 +1163,7 @@ export class ChatService {
       where: {
         id: scheduleId,
         userId,
+        isDeleted: false,
       },
     });
 
@@ -1148,6 +1188,7 @@ export class ChatService {
     const collision = await this.prisma.schedule.findFirst({
       where: {
         userId,
+        isDeleted: false,
         status: 'ACCEPTED',
         ...(ignoredScheduleId ? { id: { not: ignoredScheduleId } } : {}),
         startDateTime: { lt: new Date(proposal.endDateTime) },
@@ -1229,9 +1270,13 @@ export class ChatService {
       proposal,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     // Signing in with Supabase's Google provider doesn't by itself grant
@@ -1240,7 +1285,11 @@ export class ChatService {
     // Google-provider users, and never let a failed/missing sync block the
     // schedule from being saved.
     if (provider !== 'google') {
-      return { schedule, syncedToGoogleCalendar: false as const };
+      return {
+        schedule,
+        message: updatedMessage,
+        syncedToGoogleCalendar: false as const,
+      };
     }
 
     try {
@@ -1259,11 +1308,13 @@ export class ChatService {
 
       return {
         schedule: updatedSchedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1314,7 +1365,13 @@ export class ChatService {
       endDateTime: message.schedule.endDateTime.toISOString(),
     };
 
-    await this.prisma.schedule.delete({ where: { id: message.schedule.id } });
+    await this.prisma.schedule.update({
+      where: { id: message.schedule.id },
+      data: {
+        isDeleted: true,
+        messageId: null,
+      },
+    });
 
     const dismissedMessage: ScheduleDismissedMessage = {
       type: 'schedule_dismissed',
@@ -1322,12 +1379,140 @@ export class ChatService {
       proposal,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(dismissedMessage) },
+      data: {
+        content: JSON.stringify(dismissedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
-    return { dismissed: true as const };
+    return {
+      dismissed: true as const,
+      message: updatedMessage,
+    };
+  }
+
+  async rejectProposal(userId: string, messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { chat: true, schedule: true },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (!message.chat) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.chat.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    let parsed: ParsedAssistantResponse;
+
+    try {
+      parsed = JSON.parse(message.content) as ParsedAssistantResponse;
+    } catch {
+      throw new BadRequestException('This message is not a proposal');
+    }
+
+    if (parsed.type === 'schedule_proposal') {
+      if (message.schedule?.status === 'ACCEPTED') {
+        throw new ConflictException('This schedule has already been accepted');
+      }
+
+      if (message.schedule) {
+        await this.prisma.schedule.update({
+          where: { id: message.schedule.id },
+          data: {
+            isDeleted: true,
+            messageId: null,
+          },
+        });
+      }
+
+      const dismissedMessage: ScheduleDismissedMessage = {
+        type: 'schedule_dismissed',
+        content: 'Oke, jadwal ini nggak ditambahkan.',
+        proposal: parsed,
+      };
+
+      const updatedMessage = await this.prisma.message.update({
+        where: { id: message.id },
+        data: {
+          content: JSON.stringify(dismissedMessage),
+          isScheduleProposal: false,
+        },
+        include: { schedule: true },
+      });
+
+      return {
+        rejected: true as const,
+        message: updatedMessage,
+      };
+    }
+
+    const proposal = this.getRejectableProposal(parsed);
+
+    if (!proposal) {
+      throw new BadRequestException('This message is not a proposal');
+    }
+
+    const rejectedMessage: ProposalRejectedMessage = {
+      type: 'proposal_rejected',
+      content: this.getProposalRejectedContent(proposal),
+      proposal,
+    };
+
+    const updatedMessage = await this.prisma.message.update({
+      where: { id: message.id },
+      data: {
+        content: JSON.stringify(rejectedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
+    });
+
+    return {
+      rejected: true as const,
+      message: updatedMessage,
+    };
+  }
+
+  private getProposalRejectedContent(
+    proposal: ProposalRejectedMessage['proposal'],
+  ) {
+    switch (proposal.type) {
+      case 'schedule_update_proposal':
+        return 'Oke, perubahan jadwal ini nggak disimpan.';
+      case 'schedule_delete_proposal':
+        return 'Oke, jadwal ini nggak dihapus.';
+      case 'life_plan_proposal':
+        return 'Oke, life plan ini nggak dibuat.';
+      case 'life_plan_update_proposal':
+        return 'Oke, perubahan life plan ini nggak disimpan.';
+      case 'life_plan_delete_proposal':
+        return 'Oke, life plan ini nggak dihapus.';
+    }
+  }
+
+  private getRejectableProposal(
+    parsed: ParsedAssistantResponse,
+  ): ProposalRejectedMessage['proposal'] | null {
+    switch (parsed.type) {
+      case 'schedule_update_proposal':
+      case 'schedule_delete_proposal':
+      case 'life_plan_proposal':
+      case 'life_plan_update_proposal':
+      case 'life_plan_delete_proposal':
+        return parsed;
+      default:
+        return null;
+    }
   }
 
   async acceptScheduleUpdateProposal(
@@ -1390,10 +1575,13 @@ export class ChatService {
       );
     }
 
+    console.log(`AMAN SAMPAI SINI`);
+
     const schedule = await this.prisma.schedule.update({
       where: { id: parsed.scheduleId },
       data: {
         summary: parsed.summary,
+        messageId: messageId,
         description: parsed.description,
         location: parsed.location,
         startDateTime: new Date(parsed.startDateTime),
@@ -1409,15 +1597,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     if (provider !== 'google' || !schedule.googleCalendarEventId) {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
       };
     }
@@ -1438,12 +1631,14 @@ export class ChatService {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         updated: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1499,8 +1694,12 @@ export class ChatService {
       parsed.scheduleId,
     );
 
-    await this.prisma.schedule.delete({
+    await this.prisma.schedule.update({
       where: { id: schedule.id },
+      data: {
+        isDeleted: true,
+        messageId: null,
+      },
     });
 
     const acceptedMessage: ScheduleDeleteAcceptedMessage = {
@@ -1510,15 +1709,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     if (provider !== 'google' || !schedule.googleCalendarEventId) {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
       };
     }
@@ -1532,12 +1736,14 @@ export class ChatService {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: true as const,
       };
     } catch (error) {
       return {
         deleted: true as const,
         schedule,
+        message: updatedMessage,
         syncedToGoogleCalendar: false as const,
         googleSyncError: String(error),
       };
@@ -1585,18 +1791,20 @@ export class ChatService {
     if (!result.created) {
       const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
-      await this.prisma.message.update({
+      const updatedMessage = await this.prisma.message.update({
         where: { id: message.id },
         data: {
           content: JSON.stringify(needsInfo),
           isScheduleProposal: false,
         },
+        include: { schedule: true },
       });
 
       return {
         created: false as const,
         lifePlan: null,
         lifePlanConflict: result.conflict,
+        message: updatedMessage,
       };
     }
 
@@ -1607,15 +1815,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       created: true as const,
       lifePlan: result.lifePlan,
       lifePlanConflict: null,
+      message: updatedMessage,
     };
   }
 
@@ -1626,6 +1839,7 @@ export class ChatService {
     const history = await this.prisma.message.findMany({
       where: {
         chatId: message.chatId,
+        isDeleted: false,
         createdAt: { lt: message.createdAt },
       },
       orderBy: { createdAt: 'asc' },
@@ -1697,18 +1911,20 @@ export class ChatService {
     if (!result.updated) {
       const needsInfo = this.buildLifePlanCollisionNeedInfo(result.conflict);
 
-      await this.prisma.message.update({
+      const updatedMessage = await this.prisma.message.update({
         where: { id: message.id },
         data: {
           content: JSON.stringify(needsInfo),
           isScheduleProposal: false,
         },
+        include: { schedule: true },
       });
 
       return {
         updated: false as const,
         lifePlan: null,
         lifePlanConflict: result.conflict,
+        message: updatedMessage,
       };
     }
 
@@ -1719,15 +1935,20 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       updated: true as const,
       lifePlan: result.lifePlan,
       lifePlanConflict: null,
+      message: updatedMessage,
     };
   }
 
@@ -1783,14 +2004,19 @@ export class ChatService {
       proposal: parsed,
     };
 
-    await this.prisma.message.update({
+    const updatedMessage = await this.prisma.message.update({
       where: { id: message.id },
-      data: { content: JSON.stringify(acceptedMessage) },
+      data: {
+        content: JSON.stringify(acceptedMessage),
+        isScheduleProposal: false,
+      },
+      include: { schedule: true },
     });
 
     return {
       deleted: true as const,
       lifePlan,
+      message: updatedMessage,
     };
   }
 }

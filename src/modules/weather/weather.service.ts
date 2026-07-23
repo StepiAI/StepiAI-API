@@ -205,7 +205,7 @@ export class WeatherService {
 
   async getForecastForSchedule(userId: string, scheduleId: string) {
     const schedule = await this.prisma.schedule.findFirst({
-      where: { id: scheduleId, userId },
+      where: { id: scheduleId, userId, isDeleted: false },
     });
 
     if (!schedule) {

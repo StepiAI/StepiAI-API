@@ -10,6 +10,7 @@ export class ScheduleService {
     return this.prisma.schedule.findMany({
       where: {
         userId,
+        isDeleted: false,
         ...(query.status ? { status: query.status } : {}),
         ...(query.timeMin
           ? { endDateTime: { gt: new Date(query.timeMin) } }
@@ -29,6 +30,7 @@ export class ScheduleService {
       where: {
         id: scheduleId,
         userId,
+        isDeleted: false,
       },
     });
 

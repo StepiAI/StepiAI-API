@@ -224,11 +224,10 @@ export class ChatService {
     const chat = await this.findOrCreateChatRecord(userId);
 
     await this.prisma.$transaction([
-      this.prisma.schedule.updateMany({
-        where: { message: { chatId: chat.id } },
-        data: { messageId: null },
+      this.prisma.message.updateMany({
+        where: { chatId: chat.id },
+        data: { isDeleted: true },
       }),
-      this.prisma.message.deleteMany({ where: { chatId: chat.id } }),
     ]);
 
     return { ...chat, messages: [] };
@@ -240,6 +239,9 @@ export class ChatService {
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
+          where: {
+            isDeleted: false,
+          },
           include: { schedule: true },
         },
       },
@@ -283,13 +285,14 @@ export class ChatService {
 
     const [history, currentSchedules, lifePlans] = await Promise.all([
       this.prisma.message.findMany({
-        where: { chatId: chat.id },
+        where: { chatId: chat.id, isDeleted: false },
         orderBy: { createdAt: 'asc' },
         include: { schedule: true },
       }),
       this.prisma.schedule.findMany({
         where: {
           userId,
+          isDeleted: false,
           status: 'ACCEPTED',
           endDateTime: {
             gt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
@@ -1144,6 +1147,7 @@ export class ChatService {
       where: {
         id: scheduleId,
         userId,
+        isDeleted: false,
       },
     });
 
@@ -1168,6 +1172,7 @@ export class ChatService {
     const collision = await this.prisma.schedule.findFirst({
       where: {
         userId,
+        isDeleted: false,
         status: 'ACCEPTED',
         ...(ignoredScheduleId ? { id: { not: ignoredScheduleId } } : {}),
         startDateTime: { lt: new Date(proposal.endDateTime) },
@@ -1334,7 +1339,13 @@ export class ChatService {
       endDateTime: message.schedule.endDateTime.toISOString(),
     };
 
-    await this.prisma.schedule.delete({ where: { id: message.schedule.id } });
+    await this.prisma.schedule.update({
+      where: { id: message.schedule.id },
+      data: {
+        isDeleted: true,
+        messageId: null,
+      },
+    });
 
     const dismissedMessage: ScheduleDismissedMessage = {
       type: 'schedule_dismissed',
@@ -1416,6 +1427,7 @@ export class ChatService {
       where: { id: parsed.scheduleId },
       data: {
         summary: parsed.summary,
+        messageId: messageId,
         description: parsed.description,
         location: parsed.location,
         startDateTime: new Date(parsed.startDateTime),
@@ -1521,8 +1533,12 @@ export class ChatService {
       parsed.scheduleId,
     );
 
-    await this.prisma.schedule.delete({
+    await this.prisma.schedule.update({
       where: { id: schedule.id },
+      data: {
+        isDeleted: true,
+        messageId: null,
+      },
     });
 
     const acceptedMessage: ScheduleDeleteAcceptedMessage = {
@@ -1648,6 +1664,7 @@ export class ChatService {
     const history = await this.prisma.message.findMany({
       where: {
         chatId: message.chatId,
+        isDeleted: false,
         createdAt: { lt: message.createdAt },
       },
       orderBy: { createdAt: 'asc' },

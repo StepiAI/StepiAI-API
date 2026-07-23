@@ -16,6 +16,22 @@ import { CreateEventDto } from './dto/create-event.dto';
 
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
+// ubah menit-sebelum jadi bentuk reminders Google. undefined = jangan disentuh
+// (pakai default kalender); null = tanpa alert; angka = override eksplisit.
+function toReminders(
+  minutesBefore?: number | null,
+): calendar_v3.Schema$Event['reminders'] | undefined {
+  if (minutesBefore === undefined) return undefined;
+
+  return {
+    useDefault: false,
+    overrides:
+      minutesBefore === null
+        ? []
+        : [{ method: 'popup', minutes: minutesBefore }],
+  };
+}
+
 @Injectable()
 export class GoogleCalendarService {
   private readonly oauthClientId: string;
@@ -243,6 +259,7 @@ export class GoogleCalendarService {
           end: { dateTime: end.toISOString(), timeZone: input.timeZone },
           // undefined = event sekali jalan; Google nolak array kosong
           recurrence: input.recurrence?.length ? input.recurrence : undefined,
+          reminders: toReminders(input.reminderMinutesBefore),
         },
       });
 
@@ -293,28 +310,35 @@ export class GoogleCalendarService {
       throw this.toGoogleApiException(error, 'create calendar event');
     }
   }
-T
+
+  // update penuh dari sheet Edit (judul, lokasi, catatan, waktu sekaligus)
   async updateEvent(userId: string, eventId: string, input: CreateEventDto) {
     const start = new Date(input.startDateTime);
     const end = new Date(input.endDateTime);
 
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid start or end time.');
-    }
     if (end.getTime() <= start.getTime()) {
       throw new BadRequestException('Event must end after it starts.');
     }
 
+    const calendar = await this.getCalendarClient(userId);
+
     try {
-      const data = await this.patchEvent(userId, eventId, {
-        summary: input.summary,
-        location: input.location ?? null,
-        description: input.description ?? null,
-        start: { dateTime: start.toISOString(), timeZone: input.timeZone },
-        end: { dateTime: end.toISOString(), timeZone: input.timeZone },
-        recurrence: input.recurrence?.length ? input.recurrence : undefined,
+      const { data } = await calendar.events.patch({
+        calendarId: 'primary',
+        eventId,
+        requestBody: {
+          summary: input.summary,
+          // null = kosongin field-nya di Google, undefined bakal dibiarin
+          location: input.location ?? null,
+          description: input.description ?? null,
+          start: { dateTime: start.toISOString(), timeZone: input.timeZone },
+          end: { dateTime: end.toISOString(), timeZone: input.timeZone },
+          recurrence: input.recurrence?.length ? input.recurrence : undefined,
+          reminders: toReminders(input.reminderMinutesBefore),
+        },
       });
 
+      // sama kayak createEvent: seed koordinat pilihan ke geocode cache
       if (
         input.location &&
         input.latitude !== undefined &&

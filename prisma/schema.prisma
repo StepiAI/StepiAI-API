@@ -76,6 +76,7 @@ model Schedule {
   isDeleted             Boolean?       @default(false)
   isPlan                Boolean?       @default(false)
   reminderSentAt        DateTime?      @map("reminder_sent_at") @db.Timestamptz(6)
+  reminderMinutesBefore Int?           @map("reminder_minutes_before")
   lifePlan              LifePlan?      @relation(fields: [lifePlanId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   message               Message?       @relation(fields: [messageId], references: [id], onUpdate: NoAction)
 

@@ -221,7 +221,8 @@ export class GoogleCalendarService {
     });
   }
 
-  async createEvent(userId: string, input: CreateEventDto) {
+  async createEvent(userId: string, input: CreateEventDto, options: { mirrorToSchedule?: boolean } = {},
+  ) {
     const start = new Date(input.startDateTime);
     const end = new Date(input.endDateTime);
 
@@ -244,6 +245,31 @@ export class GoogleCalendarService {
           recurrence: input.recurrence?.length ? input.recurrence : undefined,
         },
       });
+
+      if (options.mirrorToSchedule !== false) {
+        const isNoneAlert = input.reminderMinutesBefore === null;
+        try {
+          await this.prisma.schedule.create({
+            data: {
+              userId,
+              summary: input.summary,
+              description: input.description ?? null,
+              location: input.location ?? null,
+              startDateTime: start,
+              endDateTime: end,
+              status: 'ACCEPTED',
+              googleCalendarEventId: data.id ?? null,
+              reminderMinutesBefore: isNoneAlert ? null : (input.reminderMinutesBefore ?? 0),
+              reminderSentAt: isNoneAlert ? new Date() : null,
+            },
+          });
+        } catch (error) {
+          console.error(
+            '[GoogleCalendar] failed to mirror event to schedules:',
+            error,
+          );
+        }
+      }
 
       // Google gak nyimpen koordinat, jd kalau user milih tempat (ada lat/lng),
       // kita seed ke geocode_cache di-key sama teks lokasinya. nanti pas list/
@@ -343,7 +369,52 @@ T
       eventId,
       requestBody: patch,
     });
+    await this.syncScheduleFromPatch(userId, eventId, patch);
+
     return data;
+  }
+
+  private async syncScheduleFromPatch(
+    userId: string,
+    eventId: string,
+    patch: calendar_v3.Schema$Event,
+  ) {
+    const data: {
+      summary?: string;
+      location?: string | null;
+      description?: string | null;
+      startDateTime?: Date;
+      endDateTime?: Date;
+      reminderSentAt?: Date | null;
+    } = {};
+
+    if (typeof patch.summary === 'string') data.summary = patch.summary;
+    if (patch.location !== undefined) data.location = patch.location ?? null;
+    if (patch.description !== undefined) {
+      data.description = patch.description ?? null;
+    }
+
+    const startIso = patch.start?.dateTime;
+    if (startIso) {
+      data.startDateTime = new Date(startIso);
+      data.reminderSentAt = null;
+    }
+    const endIso = patch.end?.dateTime;
+    if (endIso) data.endDateTime = new Date(endIso);
+
+    if (Object.keys(data).length === 0) return;
+
+    try {
+      await this.prisma.schedule.updateMany({
+        where: { userId, googleCalendarEventId: eventId },
+        data,
+      });
+    } catch (error) {
+      console.error(
+        '[GoogleCalendar] failed to sync linked schedule:',
+        error,
+      );
+    }
   }
 
   // "Push everything later"
@@ -380,6 +451,18 @@ T
   async deleteEvent(userId: string, eventId: string) {
     const calendar = await this.getCalendarClient(userId);
     await calendar.events.delete({ calendarId: 'primary', eventId });
+
+    try {
+      await this.prisma.schedule.updateMany({
+        where: { userId, googleCalendarEventId: eventId },
+        data: { isDeleted: true },
+      });
+    } catch (error) {
+      console.error(
+        '[GoogleCalendar] failed to soft-delete linked schedule:',
+        error,
+      );
+    }
   }
 
   private toStatus(account: { scope: string; updatedAt: Date }) {

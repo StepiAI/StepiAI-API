@@ -1294,12 +1294,14 @@ export class ChatService {
 
     try {
       const event = await this.googleCalendarService.createEvent(userId, {
-        summary: proposal.summary,
-        description: proposal.description ?? undefined,
-        location: proposal.location ?? undefined,
-        startDateTime: proposal.startDateTime,
-        endDateTime: proposal.endDateTime,
-      });
+          summary: proposal.summary,
+          description: proposal.description ?? undefined,
+          location: proposal.location ?? undefined,
+          startDateTime: proposal.startDateTime,
+          endDateTime: proposal.endDateTime,
+        },
+        { mirrorToSchedule: false },
+      );
 
       const updatedSchedule = await this.prisma.schedule.update({
         where: { id: schedule.id },

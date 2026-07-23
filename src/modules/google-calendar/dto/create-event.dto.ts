@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsInt,
   IsISO8601,
   IsNumber,
   IsOptional,
@@ -70,4 +71,10 @@ export class CreateEventDto {
       'recurrence harus diawali RRULE:, RDATE:, EXRULE:, atau EXDATE: (RFC 5545)',
   })
   recurrence?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  reminderMinutesBefore?: number | null;
 }

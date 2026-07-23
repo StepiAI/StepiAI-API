@@ -5,6 +5,7 @@ import type { SaveDeviceTokenDto } from './dto/save-device-token.dto';
 import type { SendNotificationToUserDto } from './dto/send-notification-to-user.dto';
 import type { SaveNotificationToAllDto } from './dto/save-notification-to-all.dto';
 import type { AddNotificationJobDto } from './dto/add-notification-job.dto';
+import type { RemoveNotificationJobDto } from './dto/remove-notification-job.dto';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('notifications')
@@ -38,5 +39,13 @@ export class NotificationsController {
     body: AddNotificationJobDto,
   ) {
     return this.notificationsService.addNotificationJob(body);
+  }
+
+  @Post('remove-job')
+  async removeJob(
+    @Body()
+    body: RemoveNotificationJobDto,
+  ) {
+    return this.notificationsService.removeNotificationJob(body);
   }
 }

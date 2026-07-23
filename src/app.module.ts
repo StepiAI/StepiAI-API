@@ -17,6 +17,7 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
 import { RoutingModule } from './modules/routing/routing.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { VoiceModule } from './modules/voice/voice.module';
+import { ReminderModule } from './modules/reminder/reminder.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { VoiceModule } from './modules/voice/voice.module';
     VoiceModule,
     RoutingModule,
     AlertsModule,
+    ReminderModule,
   ],
   controllers: [AppController],
   providers: [AppService],

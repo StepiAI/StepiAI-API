@@ -291,6 +291,21 @@ export class LifePlanService {
     return this.findOwnedLifePlan(userId, lifePlanId);
   }
 
+  async setArchived(userId: string, lifePlanId: string, archived: boolean) {
+    await this.findOwnedLifePlan(userId, lifePlanId);
+
+    return this.prisma.lifePlan.update({
+      where: { id: lifePlanId },
+      data: { archived },
+    });
+  }
+
+  async removeByUser(userId: string, lifePlanId: string) {
+    await this.deleteFromAi(userId, lifePlanId);
+
+    return { deleted: true };
+  }
+
   private buildAiScheduleData(userId: string, dto: CreateLifePlanFromAiDto) {
     this.validateLifePlanInput(dto);
     this.validateSkippedDates(dto.skippedDates);

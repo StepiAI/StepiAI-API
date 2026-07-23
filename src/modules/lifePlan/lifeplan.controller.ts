@@ -1,7 +1,17 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/request-with-user.interface';
+import { ArchiveLifePlanDto } from './dto/archive-lifeplan.dto';
 import { CreateLifePlanDto } from './dto/create-lifeplan.dto';
 import { LifePlanService } from './lifeplan.service';
 
@@ -29,5 +39,22 @@ export class LifePlanController {
     @Param('id') id: string,
   ) {
     return this.lifePlanService.findOneByUser(user.id, id);
+  }
+
+  @Patch(':id/archive')
+  setArchived(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ArchiveLifePlanDto,
+  ) {
+    return this.lifePlanService.setArchived(user.id, id, dto.archived);
+  }
+
+  @Delete(':id')
+  deleteLifePlan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.lifePlanService.removeByUser(user.id, id);
   }
 }

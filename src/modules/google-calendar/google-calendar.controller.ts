@@ -89,12 +89,13 @@ export class GoogleCalendarController {
   }
 
   @Delete('events/:id')
-  @HttpCode(204)
-  deleteEvent(
+  async deleteEvent(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') eventId: string,
   ) {
-    return this.googleCalendarService.deleteEvent(user.id, eventId);
+    await this.googleCalendarService.deleteEvent(user.id, eventId);
+    // balikin JSON, jangan body kosong — client nge-parse response-nya
+    return { deleted: true as const };
   }
 
   @Get('events')

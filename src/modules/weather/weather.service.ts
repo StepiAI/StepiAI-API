@@ -85,7 +85,7 @@ const WET_CATEGORIES: ReadonlySet<WeatherCategory> = new Set([
   'thunderstorm',
 ]);
 
-const NON_PHYSICAL_LOCATIONS: ReadonlySet<string> = new Set([
+export const NON_PHYSICAL_LOCATIONS: ReadonlySet<string> = new Set([
   'online',
   'daring',
   'zoom',

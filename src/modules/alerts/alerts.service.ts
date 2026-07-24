@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WeatherService, HourlyWeather } from '../weather/weather.service';
+import {
+  WeatherService,
+  HourlyWeather,
+  NON_PHYSICAL_LOCATIONS,
+} from '../weather/weather.service';
 import { RoutingService } from '../routing/routing.service';
 import { onTimeProbability, recommendDeparture } from './on-time';
 
@@ -73,11 +77,16 @@ export class AlertsService {
   ): Promise<ScheduleAlert[]> {
     const upcomingRaw = events.filter((event) => {
       const start = new Date(event.startDateTime).getTime();
+      const location = event.location?.trim() ?? '';
       return (
         Number.isFinite(start) &&
         start > now.getTime() &&
         start - now.getTime() <= LOOKAHEAD_WINDOW_MS &&
-        !!event.location?.trim()
+        !!location &&
+        // "Online"/"Zoom"/dst bukan koordinat fisik -- kalau lolos ke geocoding,
+        // dia bisa ke-resolve ke tempat random & munculin "macet" ngawur
+        // (nyata terjadi: event online jam 17:00 dpt alert "berangkat jam 2 siang").
+        !NON_PHYSICAL_LOCATIONS.has(location.toLowerCase())
       );
     });
 

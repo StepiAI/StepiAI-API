@@ -1,13 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WeatherService, HourlyWeather } from '../weather/weather.service';
+import {
+  WeatherService,
+  HourlyWeather,
+  NON_PHYSICAL_LOCATIONS,
+} from '../weather/weather.service';
 import { RoutingService } from '../routing/routing.service';
 import { onTimeProbability, recommendDeparture } from './on-time';
 
-// ambang buat munculin warning macet
-const TRAFFIC_DELAY_ALERT_SEC = 5 * 60;
+// ambang buat munculin warning macet — DITURUNIN sementara dari 5 menit ke 1
+// menit biar gampang ke-trigger buat demo (macet tipis dikit langsung
+// ngalert). Naikin lagi ke 5*60 kalau udah lewat demo/lomba.
+const TRAFFIC_DELAY_ALERT_SEC = 1 * 60;
 const PUSH_DELAY_SEC = 15 * 60;
 const WET_PROBABILITY_THRESHOLD = 40;
-const LOOKAHEAD_WINDOW_MS = 24 * 3_600_000;
+const LOOKAHEAD_WINDOW_MS = 7 * 24 * 3_600_000;
 
 const DEFAULT_TIME_ZONE = 'Asia/Jakarta';
 
@@ -69,15 +75,53 @@ export class AlertsService {
     now: Date = new Date(),
     timeZone: string = DEFAULT_TIME_ZONE,
   ): Promise<ScheduleAlert[]> {
-    const upcoming = events.filter((event) => {
+    const upcomingRaw = events.filter((event) => {
       const start = new Date(event.startDateTime).getTime();
+      const location = event.location?.trim() ?? '';
       return (
         Number.isFinite(start) &&
         start > now.getTime() &&
         start - now.getTime() <= LOOKAHEAD_WINDOW_MS &&
-        !!event.location?.trim()
+        !!location &&
+        // "Online"/"Zoom"/dst bukan koordinat fisik -- kalau lolos ke geocoding,
+        // dia bisa ke-resolve ke tempat random & munculin "macet" ngawur
+        // (nyata terjadi: event online jam 17:00 dpt alert "berangkat jam 2 siang").
+        !NON_PHYSICAL_LOCATIONS.has(location.toLowerCase())
       );
     });
+
+    // dedupe by id -- kalender/kalendar sync kadang ngirim event yg sama 2x+
+    // (mis. life plan session yg juga ke-sync ke Google). Diproses 2x = 2
+    // panggilan TomTom terpisah -> hasil dikit beda -> user liat 2 warning
+    // buat 1 acara yg sama. Ambil kemunculan pertama aja.
+    const seenIds = new Set<string>();
+    const upcoming = upcomingRaw.filter((event) => {
+      if (seenIds.has(event.id)) return false;
+      seenIds.add(event.id);
+      return true;
+    });
+    if (upcoming.length !== upcomingRaw.length) {
+      this.logger.warn(
+        `[ALERT DEBUG] buang ${upcomingRaw.length - upcoming.length} event duplikat (id sama)`,
+      );
+    }
+
+    // [ALERT DEBUG] hapus setelah beres — biar keliatan di Railway logs
+    this.logger.log(
+      `[ALERT DEBUG] masuk=${events.length} lolos-window=${upcoming.length} (window=${LOOKAHEAD_WINDOW_MS / 3_600_000}h)`,
+    );
+    for (const e of events) {
+      const start = new Date(e.startDateTime).getTime();
+      const inH = ((start - now.getTime()) / 3_600_000).toFixed(1);
+      const passes =
+        Number.isFinite(start) &&
+        start > now.getTime() &&
+        start - now.getTime() <= LOOKAHEAD_WINDOW_MS &&
+        !!e.location?.trim();
+      this.logger.log(
+        `[ALERT DEBUG] "${e.summary}" start=${e.startDateTime} (${inH}h dari now) loc="${e.location ?? ''}" -> ${passes ? 'DIPROSES' : 'DIBUANG'}`,
+      );
+    }
 
     const perEvent = await Promise.all(
       upcoming.map((event) => this.analyzeEvent(origin, event, timeZone)),
@@ -117,6 +161,10 @@ export class AlertsService {
     }
 
     if (!forecast) {
+      // [ALERT DEBUG] cuaca null bikin traffic alert ikut ke-skip
+      this.logger.warn(
+        `[ALERT DEBUG] "${event.summary}" forecast NULL -> semua alert di-skip`,
+      );
       return [];
     }
 
@@ -168,6 +216,11 @@ export class AlertsService {
       travelSeconds: estimate.travelSeconds,
       noTrafficSeconds: estimate.noTrafficSeconds,
     });
+
+    // [ALERT DEBUG] angka mentah dari TomTom + hasil hitungnya
+    this.logger.log(
+      `[ALERT DEBUG] "${event.summary}" travel=${estimate.travelSeconds}s noTraffic=${estimate.noTrafficSeconds}s delay=${rec.trafficDelaySeconds}s (ambang=${TRAFFIC_DELAY_ALERT_SEC}s) -> ${rec.trafficDelaySeconds < TRAFFIC_DELAY_ALERT_SEC ? 'DI BAWAH AMBANG, nggak ngalert' : 'NGALERT'}`,
+    );
 
     // cuma munculin kartu kalau macet prediksi beneran berarti (>= 5 menit).
     // di luar itu (mis. jam sepi) nggak usah ganggu.

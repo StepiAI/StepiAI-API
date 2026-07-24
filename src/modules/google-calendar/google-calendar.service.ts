@@ -477,6 +477,19 @@ export class GoogleCalendarService {
         },
       });
 
+      await this.syncScheduleFromPatch(
+        userId,
+        eventId,
+        {
+          summary: input.summary,
+          location: input.location ?? null,
+          description: input.description ?? null,
+          start: { dateTime: start.toISOString(), timeZone: input.timeZone },
+          end: { dateTime: end.toISOString(), timeZone: input.timeZone },
+        },
+        input.reminderMinutesBefore,
+      );
+
       // sama kayak createEvent: seed koordinat pilihan ke geocode cache
       if (
         input.location &&
@@ -545,6 +558,7 @@ export class GoogleCalendarService {
     userId: string,
     eventId: string,
     patch: calendar_v3.Schema$Event,
+    reminderMinutesBefore?: number | null,
   ) {
     const data: {
       summary?: string;
@@ -553,6 +567,7 @@ export class GoogleCalendarService {
       startDateTime?: Date;
       endDateTime?: Date;
       reminderSentAt?: Date | null;
+      reminderMinutesBefore?: number | null;
     } = {};
 
     if (typeof patch.summary === 'string') data.summary = patch.summary;
@@ -568,6 +583,16 @@ export class GoogleCalendarService {
     }
     const endIso = patch.end?.dateTime;
     if (endIso) data.endDateTime = new Date(endIso);
+
+    if (reminderMinutesBefore !== undefined) {
+      if (reminderMinutesBefore === null) {
+        data.reminderMinutesBefore = null;
+        data.reminderSentAt = new Date();
+      } else {
+        data.reminderMinutesBefore = reminderMinutesBefore;
+        data.reminderSentAt = null;
+      }
+    }
 
     if (Object.keys(data).length === 0) return;
 

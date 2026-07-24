@@ -1279,48 +1279,21 @@ export class ChatService {
       include: { schedule: true },
     });
 
-    // Signing in with Supabase's Google provider doesn't by itself grant
-    // Calendar API access — that still requires the separate Google Calendar
-    // integration (GoogleCalendarAccount). We only attempt the sync for
-    // Google-provider users, and never let a failed/missing sync block the
-    // schedule from being saved.
-    if (provider !== 'google') {
-      return {
+    const googleCalendarSync =
+      await this.googleCalendarService.syncScheduleToGoogleCalendar(
+        userId,
         schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-      };
-    }
-
-    try {
-      const event = await this.googleCalendarService.createEvent(userId, {
-          summary: proposal.summary,
-          description: proposal.description ?? undefined,
-          location: proposal.location ?? undefined,
-          startDateTime: proposal.startDateTime,
-          endDateTime: proposal.endDateTime,
-        },
-        { mirrorToSchedule: false },
       );
+    const syncedSchedule = await this.prisma.schedule.findUnique({
+      where: { id: schedule.id },
+    });
 
-      const updatedSchedule = await this.prisma.schedule.update({
-        where: { id: schedule.id },
-        data: { googleCalendarEventId: event.id ?? null },
-      });
-
-      return {
-        schedule: updatedSchedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: true as const,
-      };
-    } catch (error) {
-      return {
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-        googleSyncError: String(error),
-      };
-    }
+    return {
+      schedule: syncedSchedule ?? schedule,
+      message: updatedMessage,
+      syncedToGoogleCalendar: googleCalendarSync.synced,
+      googleCalendarSync,
+    };
   }
 
   /**
@@ -1577,8 +1550,6 @@ export class ChatService {
       );
     }
 
-    console.log(`AMAN SAMPAI SINI`);
-
     const schedule = await this.prisma.schedule.update({
       where: { id: parsed.scheduleId },
       data: {
@@ -1608,43 +1579,22 @@ export class ChatService {
       include: { schedule: true },
     });
 
-    if (provider !== 'google' || !schedule.googleCalendarEventId) {
-      return {
-        updated: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-      };
-    }
-
-    try {
-      await this.googleCalendarService.patchEvent(
+    const googleCalendarSync =
+      await this.googleCalendarService.syncScheduleToGoogleCalendar(
         userId,
-        schedule.googleCalendarEventId,
-        {
-          summary: parsed.summary,
-          description: parsed.description,
-          location: parsed.location,
-          start: { dateTime: new Date(parsed.startDateTime).toISOString() },
-          end: { dateTime: new Date(parsed.endDateTime).toISOString() },
-        },
+        schedule,
       );
+    const syncedSchedule = await this.prisma.schedule.findUnique({
+      where: { id: schedule.id },
+    });
 
-      return {
-        updated: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: true as const,
-      };
-    } catch (error) {
-      return {
-        updated: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-        googleSyncError: String(error),
-      };
-    }
+    return {
+      updated: true as const,
+      schedule: syncedSchedule ?? schedule,
+      message: updatedMessage,
+      syncedToGoogleCalendar: googleCalendarSync.synced,
+      googleCalendarSync,
+    };
   }
 
   async acceptScheduleDeleteProposal(
@@ -1720,36 +1670,19 @@ export class ChatService {
       include: { schedule: true },
     });
 
-    if (provider !== 'google' || !schedule.googleCalendarEventId) {
-      return {
-        deleted: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-      };
-    }
-
-    try {
-      await this.googleCalendarService.deleteEvent(
+    const googleCalendarSync =
+      await this.googleCalendarService.deleteScheduleFromGoogleCalendar(
         userId,
-        schedule.googleCalendarEventId,
+        schedule,
       );
 
-      return {
-        deleted: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: true as const,
-      };
-    } catch (error) {
-      return {
-        deleted: true as const,
-        schedule,
-        message: updatedMessage,
-        syncedToGoogleCalendar: false as const,
-        googleSyncError: String(error),
-      };
-    }
+    return {
+      deleted: true as const,
+      schedule,
+      message: updatedMessage,
+      syncedToGoogleCalendar: googleCalendarSync.synced,
+      googleCalendarSync,
+    };
   }
 
   async acceptLifePlanProposal(userId: string, messageId: string) {

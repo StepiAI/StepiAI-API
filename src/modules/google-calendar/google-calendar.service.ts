@@ -7,12 +7,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { auth as googleAuth, calendar, calendar_v3 } from '@googleapis/calendar';
+import {
+  auth as googleAuth,
+  calendar,
+  calendar_v3,
+} from '@googleapis/calendar';
 import type { Credentials } from 'google-auth-library';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GeocodingService } from '../weather/geocoding.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import type { Schedule } from '@prisma/client';
 
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
@@ -237,7 +242,10 @@ export class GoogleCalendarService {
     });
   }
 
-  async createEvent(userId: string, input: CreateEventDto, options: { mirrorToSchedule?: boolean } = {},
+  async createEvent(
+    userId: string,
+    input: CreateEventDto,
+    options: { mirrorToSchedule?: boolean } = {},
   ) {
     const start = new Date(input.startDateTime);
     const end = new Date(input.endDateTime);
@@ -276,7 +284,9 @@ export class GoogleCalendarService {
               endDateTime: end,
               status: 'ACCEPTED',
               googleCalendarEventId: data.id ?? null,
-              reminderMinutesBefore: isNoneAlert ? null : (input.reminderMinutesBefore ?? 0),
+              reminderMinutesBefore: isNoneAlert
+                ? null
+                : (input.reminderMinutesBefore ?? 0),
               reminderSentAt: isNoneAlert ? new Date() : null,
             },
           });
@@ -302,12 +312,141 @@ export class GoogleCalendarService {
           label: input.location,
         });
 
-        return { ...data, latitude: input.latitude, longitude: input.longitude };
+        return {
+          ...data,
+          latitude: input.latitude,
+          longitude: input.longitude,
+        };
       }
 
       return data;
     } catch (error) {
       throw this.toGoogleApiException(error, 'create calendar event');
+    }
+  }
+
+  async syncScheduleToGoogleCalendar(
+    userId: string,
+    schedule: Pick<
+      Schedule,
+      | 'id'
+      | 'summary'
+      | 'description'
+      | 'location'
+      | 'startDateTime'
+      | 'endDateTime'
+      | 'googleCalendarEventId'
+    >,
+  ) {
+    try {
+      if (schedule.googleCalendarEventId) {
+        await this.patchEvent(userId, schedule.googleCalendarEventId, {
+          summary: schedule.summary,
+          description: schedule.description,
+          location: schedule.location,
+          start: { dateTime: schedule.startDateTime.toISOString() },
+          end: { dateTime: schedule.endDateTime.toISOString() },
+        });
+
+        return {
+          synced: true as const,
+          googleCalendarEventId: schedule.googleCalendarEventId,
+        };
+      }
+
+      const event = await this.createEvent(
+        userId,
+        {
+          summary: schedule.summary,
+          description: schedule.description ?? undefined,
+          location: schedule.location ?? undefined,
+          startDateTime: schedule.startDateTime.toISOString(),
+          endDateTime: schedule.endDateTime.toISOString(),
+        },
+        { mirrorToSchedule: false },
+      );
+
+      await this.prisma.schedule.update({
+        where: { id: schedule.id },
+        data: { googleCalendarEventId: event.id ?? null },
+      });
+
+      return {
+        synced: true as const,
+        googleCalendarEventId: event.id ?? null,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return {
+          synced: false as const,
+          googleCalendarEventId: schedule.googleCalendarEventId,
+        };
+      }
+
+      console.error(
+        '[GoogleCalendar] failed to sync schedule to Google Calendar:',
+        this.describeGoogleError(error),
+      );
+
+      return {
+        synced: false as const,
+        googleCalendarEventId: schedule.googleCalendarEventId,
+        error: String(error),
+      };
+    }
+  }
+
+  async deleteScheduleFromGoogleCalendar(
+    userId: string,
+    schedule: Pick<Schedule, 'id' | 'googleCalendarEventId'>,
+  ) {
+    if (!schedule.googleCalendarEventId) {
+      return { synced: false as const };
+    }
+
+    try {
+      const calendar = await this.getCalendarClient(userId);
+      await calendar.events.delete({
+        calendarId: 'primary',
+        eventId: schedule.googleCalendarEventId,
+      });
+
+      await this.prisma.schedule
+        .update({
+          where: { id: schedule.id },
+          data: { googleCalendarEventId: null },
+        })
+        .catch(() => undefined);
+
+      return { synced: true as const };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return { synced: false as const };
+      }
+
+      const status = (error as { response?: { status?: number } })?.response
+        ?.status;
+
+      if (status === 404) {
+        await this.prisma.schedule
+          .update({
+            where: { id: schedule.id },
+            data: { googleCalendarEventId: null },
+          })
+          .catch(() => undefined);
+
+        return { synced: true as const };
+      }
+
+      console.error(
+        '[GoogleCalendar] failed to delete schedule from Google Calendar:',
+        this.describeGoogleError(error),
+      );
+
+      return {
+        synced: false as const,
+        error: String(error),
+      };
     }
   }
 
@@ -350,7 +489,11 @@ export class GoogleCalendarService {
           label: input.location,
         });
 
-        return { ...data, latitude: input.latitude, longitude: input.longitude };
+        return {
+          ...data,
+          latitude: input.latitude,
+          longitude: input.longitude,
+        };
       }
 
       return data;
@@ -434,10 +577,7 @@ export class GoogleCalendarService {
         data,
       });
     } catch (error) {
-      console.error(
-        '[GoogleCalendar] failed to sync linked schedule:',
-        error,
-      );
+      console.error('[GoogleCalendar] failed to sync linked schedule:', error);
     }
   }
 

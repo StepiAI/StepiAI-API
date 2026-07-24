@@ -4,12 +4,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GoogleCalendarService } from '../google-calendar/google-calendar.service';
 import { ListSchedulesQueryDto } from './dto/list-schedules-query.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 
 @Injectable()
 export class ScheduleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly googleCalendarService: GoogleCalendarService,
+  ) {}
 
   findAllByUser(userId: string, query: ListSchedulesQueryDto) {
     return this.prisma.schedule.findMany({
@@ -52,7 +56,7 @@ export class ScheduleService {
       throw new BadRequestException('Schedule must end after it starts.');
     }
 
-    return this.prisma.schedule.update({
+    const schedule = await this.prisma.schedule.update({
       where: { id: scheduleId },
       data: {
         summary: dto.summary,
@@ -62,18 +66,32 @@ export class ScheduleService {
         endDateTime: end,
       },
     });
+
+    const googleCalendarSync =
+      await this.googleCalendarService.syncScheduleToGoogleCalendar(
+        userId,
+        schedule,
+      );
+
+    return { ...schedule, googleCalendarSync };
   }
 
   // soft delete satu sesi (dipakai buat hapus task dari life plan)
   async removeByUser(userId: string, scheduleId: string) {
-    await this.findOneByUser(userId, scheduleId);
+    const schedule = await this.findOneByUser(userId, scheduleId);
 
     await this.prisma.schedule.update({
       where: { id: scheduleId },
       data: { isDeleted: true },
     });
 
-    return { deleted: true as const };
+    const googleCalendarSync =
+      await this.googleCalendarService.deleteScheduleFromGoogleCalendar(
+        userId,
+        schedule,
+      );
+
+    return { deleted: true as const, googleCalendarSync };
   }
 
   async findOneByUser(userId: string, scheduleId: string) {

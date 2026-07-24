@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Schedule, ScheduleStatus, LifePlan, Weekday } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GoogleCalendarService } from '../google-calendar/google-calendar.service';
 import { CreateLifePlanDto } from './dto/create-lifeplan.dto';
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -182,7 +184,11 @@ export function buildLifePlanScheduleData(
 
 @Injectable()
 export class LifePlanService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly googleCalendarService?: GoogleCalendarService,
+  ) {}
 
   async createFromAi(
     userId: string,
@@ -203,14 +209,18 @@ export class LifePlanService {
       };
     }
 
+    const lifePlan = await this.createWithSchedules(
+      userId,
+      dto,
+      scheduleData,
+      ScheduleStatus.ACCEPTED,
+    );
+
+    await this.syncLifePlanSchedulesToGoogleCalendar(userId, lifePlan.id);
+
     return {
       created: true,
-      lifePlan: await this.createWithSchedules(
-        userId,
-        dto,
-        scheduleData,
-        ScheduleStatus.ACCEPTED,
-      ),
+      lifePlan,
     };
   }
 
@@ -246,15 +256,24 @@ export class LifePlanService {
       };
     }
 
+    const oldSchedules = await this.findSyncableLifePlanSchedules(
+      userId,
+      lifePlanId,
+    );
+    const lifePlan = await this.updateWithSchedules(
+      userId,
+      lifePlanId,
+      dto,
+      scheduleData,
+      ScheduleStatus.ACCEPTED,
+    );
+
+    await this.deleteSchedulesFromGoogleCalendar(userId, oldSchedules);
+    await this.syncLifePlanSchedulesToGoogleCalendar(userId, lifePlanId);
+
     return {
       updated: true,
-      lifePlan: await this.updateWithSchedules(
-        userId,
-        lifePlanId,
-        dto,
-        scheduleData,
-        ScheduleStatus.ACCEPTED,
-      ),
+      lifePlan,
     };
   }
 
@@ -272,8 +291,12 @@ export class LifePlanService {
 
   async deleteFromAi(userId: string, lifePlanId: string) {
     await this.findOwnedLifePlan(userId, lifePlanId);
+    const schedules = await this.findSyncableLifePlanSchedules(
+      userId,
+      lifePlanId,
+    );
 
-    return this.prisma.lifePlan.update({
+    const lifePlan = await this.prisma.lifePlan.update({
       where: { id: lifePlanId },
       data: {
         isDeleted: true,
@@ -285,6 +308,10 @@ export class LifePlanService {
         },
       },
     });
+
+    await this.deleteSchedulesFromGoogleCalendar(userId, schedules);
+
+    return lifePlan;
   }
 
   async findForAi(userId: string, lifePlanId: string) {
@@ -293,11 +320,23 @@ export class LifePlanService {
 
   async setArchived(userId: string, lifePlanId: string, archived: boolean) {
     await this.findOwnedLifePlan(userId, lifePlanId);
+    const schedules = await this.findSyncableLifePlanSchedules(
+      userId,
+      lifePlanId,
+    );
 
-    return this.prisma.lifePlan.update({
+    const lifePlan = await this.prisma.lifePlan.update({
       where: { id: lifePlanId },
       data: { archived },
     });
+
+    if (archived) {
+      await this.deleteSchedulesFromGoogleCalendar(userId, schedules);
+    } else {
+      await this.syncLifePlanSchedulesToGoogleCalendar(userId, lifePlanId);
+    }
+
+    return lifePlan;
   }
 
   async removeByUser(userId: string, lifePlanId: string) {
@@ -875,6 +914,56 @@ export class LifePlanService {
     ).padStart(2, '0')}`;
   }
 
+  private async findSyncableLifePlanSchedules(
+    userId: string,
+    lifePlanId: string,
+  ) {
+    if (!this.googleCalendarService) return [];
+
+    return this.prisma.schedule.findMany({
+      where: {
+        userId,
+        lifePlanId,
+        isDeleted: false,
+        status: ScheduleStatus.ACCEPTED,
+      },
+      orderBy: { startDateTime: 'asc' },
+    });
+  }
+
+  private async syncLifePlanSchedulesToGoogleCalendar(
+    userId: string,
+    lifePlanId: string,
+  ) {
+    if (!this.googleCalendarService) return;
+
+    const schedules = await this.findSyncableLifePlanSchedules(
+      userId,
+      lifePlanId,
+    );
+
+    for (const schedule of schedules) {
+      await this.googleCalendarService.syncScheduleToGoogleCalendar(
+        userId,
+        schedule,
+      );
+    }
+  }
+
+  private async deleteSchedulesFromGoogleCalendar(
+    userId: string,
+    schedules: Array<Pick<Schedule, 'id' | 'googleCalendarEventId'>>,
+  ) {
+    if (!this.googleCalendarService) return;
+
+    for (const schedule of schedules) {
+      await this.googleCalendarService.deleteScheduleFromGoogleCalendar(
+        userId,
+        schedule,
+      );
+    }
+  }
+
   async findAllByUser(userId: string) {
     return this.prisma.lifePlan.findMany({
       where: {
@@ -883,6 +972,13 @@ export class LifePlanService {
       },
       orderBy: {
         createdAt: 'desc',
+      },
+      include: {
+        schedules: {
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
       },
     });
   }

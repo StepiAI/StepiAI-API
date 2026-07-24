@@ -7,7 +7,7 @@ import { onTimeProbability, recommendDeparture } from './on-time';
 const TRAFFIC_DELAY_ALERT_SEC = 5 * 60;
 const PUSH_DELAY_SEC = 15 * 60;
 const WET_PROBABILITY_THRESHOLD = 40;
-const LOOKAHEAD_WINDOW_MS = 24 * 3_600_000;
+const LOOKAHEAD_WINDOW_MS = 7 * 24 * 3_600_000;
 
 const DEFAULT_TIME_ZONE = 'Asia/Jakarta';
 

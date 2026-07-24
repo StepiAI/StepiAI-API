@@ -875,8 +875,8 @@ export class LifePlanService {
 
     return {
       date: conflict.date,
-      startTime: this.formatTimeInUtc7(slot.start),
-      endTime: this.formatTimeInUtc7(slot.end),
+      startTime: formatTimeInUtc7(slot.start),
+      endTime: formatTimeInUtc7(slot.end),
     };
   }
 

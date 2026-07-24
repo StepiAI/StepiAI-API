@@ -79,6 +79,23 @@ export class AlertsService {
       );
     });
 
+    // [ALERT DEBUG] hapus setelah beres — biar keliatan di Railway logs
+    this.logger.log(
+      `[ALERT DEBUG] masuk=${events.length} lolos-window=${upcoming.length} (window=${LOOKAHEAD_WINDOW_MS / 3_600_000}h)`,
+    );
+    for (const e of events) {
+      const start = new Date(e.startDateTime).getTime();
+      const inH = ((start - now.getTime()) / 3_600_000).toFixed(1);
+      const passes =
+        Number.isFinite(start) &&
+        start > now.getTime() &&
+        start - now.getTime() <= LOOKAHEAD_WINDOW_MS &&
+        !!e.location?.trim();
+      this.logger.log(
+        `[ALERT DEBUG] "${e.summary}" start=${e.startDateTime} (${inH}h dari now) loc="${e.location ?? ''}" -> ${passes ? 'DIPROSES' : 'DIBUANG'}`,
+      );
+    }
+
     const perEvent = await Promise.all(
       upcoming.map((event) => this.analyzeEvent(origin, event, timeZone)),
     );
@@ -117,6 +134,10 @@ export class AlertsService {
     }
 
     if (!forecast) {
+      // [ALERT DEBUG] cuaca null bikin traffic alert ikut ke-skip
+      this.logger.warn(
+        `[ALERT DEBUG] "${event.summary}" forecast NULL -> semua alert di-skip`,
+      );
       return [];
     }
 
@@ -168,6 +189,11 @@ export class AlertsService {
       travelSeconds: estimate.travelSeconds,
       noTrafficSeconds: estimate.noTrafficSeconds,
     });
+
+    // [ALERT DEBUG] angka mentah dari TomTom + hasil hitungnya
+    this.logger.log(
+      `[ALERT DEBUG] "${event.summary}" travel=${estimate.travelSeconds}s noTraffic=${estimate.noTrafficSeconds}s delay=${rec.trafficDelaySeconds}s (ambang=${TRAFFIC_DELAY_ALERT_SEC}s) -> ${rec.trafficDelaySeconds < TRAFFIC_DELAY_ALERT_SEC ? 'DI BAWAH AMBANG, nggak ngalert' : 'NGALERT'}`,
+    );
 
     // cuma munculin kartu kalau macet prediksi beneran berarti (>= 5 menit).
     // di luar itu (mis. jam sepi) nggak usah ganggu.

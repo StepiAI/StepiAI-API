@@ -544,14 +544,19 @@ export class GoogleCalendarService {
     patch: calendar_v3.Schema$Event,
   ) {
     const calendar = await this.getCalendarClient(userId);
-    const { data } = await calendar.events.patch({
-      calendarId: 'primary',
-      eventId,
-      requestBody: patch,
-    });
-    await this.syncScheduleFromPatch(userId, eventId, patch);
 
-    return data;
+    try {
+      const { data } = await calendar.events.patch({
+        calendarId: 'primary',
+        eventId,
+        requestBody: patch,
+      });
+      await this.syncScheduleFromPatch(userId, eventId, patch);
+
+      return data;
+    } catch (error) {
+      throw this.toGoogleApiException(error, 'patch calendar event');
+    }
   }
 
   private async syncScheduleFromPatch(
@@ -677,6 +682,14 @@ export class GoogleCalendarService {
     // 403 bisa scope kurang, api belum di-enable, ato kena quota. reconnect belum tentu nolong
     if (status === 403) {
       return new ForbiddenException(`Google denied the request: ${detail}`);
+    }
+
+    // 404 = eventId gak dikenal Google -- kejadian nyata kalau yg dikirim itu
+    // id lokal (schedule.id) dari sesi life plan yg belum sempet sync ke Google
+    if (status === 404) {
+      return new NotFoundException(
+        `Event not found on Google Calendar (it may not have synced yet): ${detail}`,
+      );
     }
 
     return new BadGatewayException(`Google failed to ${action}: ${detail}`);

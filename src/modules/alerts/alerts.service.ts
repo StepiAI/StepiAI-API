@@ -3,8 +3,10 @@ import { WeatherService, HourlyWeather } from '../weather/weather.service';
 import { RoutingService } from '../routing/routing.service';
 import { onTimeProbability, recommendDeparture } from './on-time';
 
-// ambang buat munculin warning macet
-const TRAFFIC_DELAY_ALERT_SEC = 5 * 60;
+// ambang buat munculin warning macet — DITURUNIN sementara dari 5 menit ke 1
+// menit biar gampang ke-trigger buat demo (macet tipis dikit langsung
+// ngalert). Naikin lagi ke 5*60 kalau udah lewat demo/lomba.
+const TRAFFIC_DELAY_ALERT_SEC = 1 * 60;
 const PUSH_DELAY_SEC = 15 * 60;
 const WET_PROBABILITY_THRESHOLD = 40;
 const LOOKAHEAD_WINDOW_MS = 7 * 24 * 3_600_000;

@@ -12,6 +12,8 @@ import { CreateLifePlanDto } from './dto/create-lifeplan.dto';
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const SAME_DAY_SEARCH_START_HOUR = 6;
 const SAME_DAY_SEARCH_END_HOUR = 23;
+const TIME_ZONE_OFFSET_HOURS = 7;
+const TIME_ZONE_OFFSET_MS = TIME_ZONE_OFFSET_HOURS * 60 * 60 * 1000;
 
 function parseDateOnly(value: string): Date {
   const [year, month, day] = value.split('-').map(Number);
@@ -20,7 +22,8 @@ function parseDateOnly(value: string): Date {
 }
 
 function formatDateOnly(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  const localValue = new Date(value.getTime() + TIME_ZONE_OFFSET_MS);
+  return localValue.toISOString().slice(0, 10);
 }
 
 function addUtcDays(value: Date, days: number): Date {
@@ -30,6 +33,7 @@ function addUtcDays(value: Date, days: number): Date {
 }
 
 function getWeekday(value: Date): Weekday {
+  const localValue = new Date(value.getTime() + TIME_ZONE_OFFSET_MS);
   const dayLookup: Record<number, Weekday> = {
     0: Weekday.SUNDAY,
     1: Weekday.MONDAY,
@@ -40,7 +44,7 @@ function getWeekday(value: Date): Weekday {
     6: Weekday.SATURDAY,
   };
 
-  return dayLookup[value.getUTCDay()];
+  return dayLookup[localValue.getUTCDay()];
 }
 
 function toUtcDateTime(dateOnly: string, time: string): Date {
@@ -52,10 +56,17 @@ function toUtcDateTime(dateOnly: string, time: string): Date {
       date.getUTCFullYear(),
       date.getUTCMonth(),
       date.getUTCDate(),
-      hour,
+      hour - TIME_ZONE_OFFSET_HOURS,
       minute,
     ),
   );
+}
+
+function formatTimeInUtc7(value: Date): string {
+  const localValue = new Date(value.getTime() + TIME_ZONE_OFFSET_MS);
+  return `${String(localValue.getUTCHours()).padStart(2, '0')}:${String(
+    localValue.getUTCMinutes(),
+  ).padStart(2, '0')}`;
 }
 
 function isOverlapping(
@@ -825,21 +836,13 @@ export class LifePlanService {
     const proposedEnd = new Date(conflict.proposedEndDateTime);
     const durationMs = proposedEnd.getTime() - proposedStart.getTime();
     const day = parseDateOnly(conflict.date);
-    const searchStart = new Date(
-      Date.UTC(
-        day.getUTCFullYear(),
-        day.getUTCMonth(),
-        day.getUTCDate(),
-        SAME_DAY_SEARCH_START_HOUR,
-      ),
+    const searchStart = toUtcDateTime(
+      conflict.date,
+      `${String(SAME_DAY_SEARCH_START_HOUR).padStart(2, '0')}:00`,
     );
-    const searchEnd = new Date(
-      Date.UTC(
-        day.getUTCFullYear(),
-        day.getUTCMonth(),
-        day.getUTCDate(),
-        SAME_DAY_SEARCH_END_HOUR,
-      ),
+    const searchEnd = toUtcDateTime(
+      conflict.date,
+      `${String(SAME_DAY_SEARCH_END_HOUR).padStart(2, '0')}:00`,
     );
 
     const existingSchedules = await this.prisma.schedule.findMany({
@@ -872,8 +875,8 @@ export class LifePlanService {
 
     return {
       date: conflict.date,
-      startTime: this.formatUtcTime(slot.start),
-      endTime: this.formatUtcTime(slot.end),
+      startTime: this.formatTimeInUtc7(slot.start),
+      endTime: this.formatTimeInUtc7(slot.end),
     };
   }
 

@@ -1,4 +1,4 @@
-const FALLBACK_TIME_ZONE = 'UTC+7';
+const FALLBACK_TIME_ZONE = 'UTC';
 
 export function normalizeTimeZone(timeZone?: string | null): string {
   if (!timeZone) return FALLBACK_TIME_ZONE;
@@ -529,6 +529,9 @@ Before responding, verify:
 10. Updates contain complete payloads, not partial changes.
 11. The response does not claim that a proposed action was already completed.
 12. Every human-facing string is in Bahasa Indonesia.
+
+# Additional Check
+- If and only if user ask to delete all schedules or all lifeplan, reject the user request and remind.
 `.trim();
 }
 
@@ -557,5 +560,10 @@ For need_info.content:
 For proposal fields:
 - Keep summary/title concise.
 - Preserve the exact schema from the normal chat contract.
-- Do not claim the action has already been accepted or saved.`;
+- Do not claim the action has already been accepted or saved.
+
+
+# Additional Check
+- If and only if user ask to delete all schedules or all lifeplan, reject the user request and remind.
+`;
 }

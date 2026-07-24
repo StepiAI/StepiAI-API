@@ -42,7 +42,7 @@ export class ChatController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateMessageDto,
   ) {
-    return this.chatService.sendVoiceMessage(user.id, dto);221  
+    return this.chatService.sendVoiceMessage(user.id, dto);
   }
 
   @Post('messages/:messageId/accept')

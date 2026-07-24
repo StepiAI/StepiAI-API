@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -94,6 +95,8 @@ const NON_PHYSICAL_LOCATIONS: ReadonlySet<string> = new Set([
 
 @Injectable()
 export class WeatherService {
+  private readonly logger = new Logger(WeatherService.name);
+
   constructor(
     private readonly geocoding: GeocodingService,
     private readonly prisma: PrismaService,
@@ -188,12 +191,22 @@ export class WeatherService {
       start.getTime() - LOOKAHEAD_HOURS_BEFORE * HOUR_MS,
     );
 
-    const lookahead = await this.getHourlyForecast(
-      latitude,
-      longitude,
-      windowStart,
-      end,
-    );
+    // Lokasi udah ketemu koordinatnya di atas — jangan biarin fetch cuaca yg
+    // gagal (mis. kuota provider abis) ikut nggugurin resolvedLocation.
+    // Traffic alert butuh koordinatnya doang, gak butuh data cuaca.
+    let lookahead: HourlyWeather[] = [];
+    try {
+      lookahead = await this.getHourlyForecast(
+        latitude,
+        longitude,
+        windowStart,
+        end,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Forecast gagal buat "${input.location}", lanjut tanpa data cuaca: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
 
     const startHourMs = this.floorToHour(start).getTime();
     const weatherAtStart =

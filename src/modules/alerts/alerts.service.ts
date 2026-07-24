@@ -69,7 +69,7 @@ export class AlertsService {
     now: Date = new Date(),
     timeZone: string = DEFAULT_TIME_ZONE,
   ): Promise<ScheduleAlert[]> {
-    const upcoming = events.filter((event) => {
+    const upcomingRaw = events.filter((event) => {
       const start = new Date(event.startDateTime).getTime();
       return (
         Number.isFinite(start) &&
@@ -78,6 +78,22 @@ export class AlertsService {
         !!event.location?.trim()
       );
     });
+
+    // dedupe by id -- kalender/kalendar sync kadang ngirim event yg sama 2x+
+    // (mis. life plan session yg juga ke-sync ke Google). Diproses 2x = 2
+    // panggilan TomTom terpisah -> hasil dikit beda -> user liat 2 warning
+    // buat 1 acara yg sama. Ambil kemunculan pertama aja.
+    const seenIds = new Set<string>();
+    const upcoming = upcomingRaw.filter((event) => {
+      if (seenIds.has(event.id)) return false;
+      seenIds.add(event.id);
+      return true;
+    });
+    if (upcoming.length !== upcomingRaw.length) {
+      this.logger.warn(
+        `[ALERT DEBUG] buang ${upcomingRaw.length - upcoming.length} event duplikat (id sama)`,
+      );
+    }
 
     // [ALERT DEBUG] hapus setelah beres — biar keliatan di Railway logs
     this.logger.log(

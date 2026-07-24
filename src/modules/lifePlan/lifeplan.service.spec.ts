@@ -30,12 +30,12 @@ describe('buildLifePlanScheduleData', () => {
       userId: 'user-1',
       summary: 'Math prep',
       description: 'Prepare for exam',
-      startDateTime: new Date(Date.UTC(2026, 6, 20, 9, 0)),
-      endDateTime: new Date(Date.UTC(2026, 6, 20, 11, 0)),
+      startDateTime: new Date(Date.UTC(2026, 6, 20, 2, 0)),
+      endDateTime: new Date(Date.UTC(2026, 6, 20, 4, 0)),
     });
     expect(schedules[1]).toMatchObject({
-      startDateTime: new Date(Date.UTC(2026, 6, 22, 9, 0)),
-      endDateTime: new Date(Date.UTC(2026, 6, 22, 11, 0)),
+      startDateTime: new Date(Date.UTC(2026, 6, 22, 2, 0)),
+      endDateTime: new Date(Date.UTC(2026, 6, 22, 4, 0)),
     });
   });
 });
@@ -98,8 +98,8 @@ describe('LifePlanService.createFromAi', () => {
       data: [
         expect.objectContaining({
           status: ScheduleStatus.ACCEPTED,
-          startDateTime: new Date(Date.UTC(2026, 6, 20, 9, 0)),
-          endDateTime: new Date(Date.UTC(2026, 6, 20, 11, 0)),
+          startDateTime: new Date(Date.UTC(2026, 6, 20, 2, 0)),
+          endDateTime: new Date(Date.UTC(2026, 6, 20, 4, 0)),
         }),
       ],
     });
